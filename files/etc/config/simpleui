@@ -1,0 +1,17 @@
+config main 'main'
+	option enabled '1'
+	option vpn_interface ''
+	option dns_intercept '1'
+	option auto_update '1'
+	option last_update 'never'
+
+config geosite 'geosite'
+	list enabled 'youtube'
+	list enabled 'instagram'
+	list enabled 'discord'
+	list enabled 'openai'
+	list enabled 'telegram'
+	list enabled 'tiktok'
+
+config geoip 'geoip'
+	list enabled 'telegram'
