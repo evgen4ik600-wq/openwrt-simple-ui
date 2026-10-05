@@ -1,4 +1,5 @@
 name: v2-lint
+# validates current Router Home v2 shell
 on:
   push:
     branches: [ v2-shell ]
