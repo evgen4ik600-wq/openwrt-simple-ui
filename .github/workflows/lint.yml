@@ -1,0 +1,34 @@
+name: lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -e
+          sh -n install.sh
+          sh -n uninstall.sh
+          sh -n files/etc/hotplug.d/iface/95-simpleui
+          sh -n files/etc/init.d/simpleui-routing
+          sh -n files/usr/share/simpleui/disable-routing.sh
+          sh -n files/usr/share/simpleui/ensure-firewall.sh
+          sh -n files/usr/share/simpleui/update-rules.sh
+          sh -n files/usr/share/simpleui/doctor.sh
+          sh -n files/usr/libexec/rpcd/luci.simpleui
+      - name: JSON syntax
+        run: |
+          python3 -m json.tool files/usr/share/luci/menu.d/luci-app-simpleui.json >/dev/null
+          python3 -m json.tool files/usr/share/rpcd/acl.d/luci-app-simpleui.json >/dev/null
+      - name: JavaScript syntax
+        run: |
+          for f in files/www/luci-static/resources/view/simpleui/*.js; do
+            node --check "$f"
+          done
