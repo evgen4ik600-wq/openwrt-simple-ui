@@ -1,0 +1,124 @@
+#!/bin/sh
+
+. /usr/share/libubox/jshn.sh
+
+reply() {
+    json_init
+    json_add_boolean ok "$1"
+    [ -n "${2:-}" ] && json_add_string message "$2"
+    json_dump
+}
+
+status() {
+    vpn="$(uci -q get simpleui.main.vpn_interface || true)"
+    enabled="$(uci -q get simpleui.main.enabled || echo 0)"
+    dns_intercept="$(uci -q get simpleui.main.dns_intercept || echo 0)"
+    wan_json="$(ifstatus wan 2>/dev/null || true)"
+    vpn_json="$(ifstatus "$vpn" 2>/dev/null || true)"
+    wan_up="$(printf '%s' "$wan_json" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    vpn_up="$(printf '%s' "$vpn_json" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    wan_ip="$(printf '%s' "$wan_json" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    vpn_ip="$(printf '%s' "$vpn_json" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    board="$(ubus call system board 2>/dev/null || true)"
+    model="$(printf '%s' "$board" | jsonfilter -e '@.model' 2>/dev/null || true)"
+    release="$(printf '%s' "$board" | jsonfilter -e '@.release.version' 2>/dev/null || true)"
+    revision="$(printf '%s' "$board" | jsonfilter -e '@.release.revision' 2>/dev/null || true)"
+    mem_total="$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
+    mem_avail="$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null)"
+    overlay_free="$(df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}')"
+    [ -n "$overlay_free" ] || overlay_free="$(df -k / 2>/dev/null | awk 'NR==2 {print $4}')"
+    domains="$(cat /tmp/simpleui/domain_count 2>/dev/null || echo 0)"
+    ips="$(cat /tmp/simpleui/ip_count 2>/dev/null || echo 0)"
+    updated="$(cat /tmp/simpleui/last_update 2>/dev/null || echo never)"
+    nftset='false'
+    dnsmasq --version 2>/dev/null | grep -q ' nftset ' && nftset='true'
+    route_active='false'
+    nft list table inet simpleui >/dev/null 2>&1 && route_active='true'
+    handshake_age=''
+    if command -v awg >/dev/null 2>&1 && [ -n "$vpn" ]; then
+        ts="$(awg show "$vpn" latest-handshakes 2>/dev/null | awk 'NR==1 {print $2}')"
+        case "$ts" in ''|0) : ;; *) now="$(date +%s)"; handshake_age="$((now-ts))" ;; esac
+    fi
+
+    json_init
+    json_add_boolean ok 1
+    json_add_string model "$model"
+    json_add_string release "$release"
+    json_add_string revision "$revision"
+    json_add_boolean wan_up "$wan_up"
+    json_add_string wan_ip "$wan_ip"
+    json_add_string vpn "$vpn"
+    json_add_boolean vpn_up "$vpn_up"
+    json_add_string vpn_ip "$vpn_ip"
+    json_add_string handshake_age "$handshake_age"
+    json_add_boolean routing_enabled "$enabled"
+    json_add_boolean routing_active "$route_active"
+    json_add_boolean dns_intercept "$dns_intercept"
+    json_add_boolean dnsmasq_nftset "$nftset"
+    json_add_string domain_count "$domains"
+    json_add_string ip_count "$ips"
+    json_add_string last_update "$updated"
+    json_add_string mem_total_kb "$mem_total"
+    json_add_string mem_available_kb "$mem_avail"
+    json_add_string overlay_free_kb "$overlay_free"
+    json_dump
+}
+
+case "${1:-}" in
+    list)
+        json_init
+        json_add_object status; json_close_object
+        json_add_object apply; json_close_object
+        json_add_object update; json_close_object
+        json_add_object get_custom; json_close_object
+        json_add_object save_custom
+            json_add_string type String
+            json_add_string content String
+        json_close_object
+        json_dump
+        ;;
+    call)
+        method="${2:-}"
+        payload="$(cat)"
+        case "$method" in
+            status)
+                status
+                ;;
+            apply|update)
+                if out="$(/usr/share/simpleui/update-rules.sh 2>&1)"; then
+                    reply 1 "${out:-Маршрутизация применена}"
+                else
+                    reply 0 "${out:-Маршрутизация не применена; обычный WAN сохранён}"
+                fi
+                ;;
+            get_custom)
+                json_init
+                json_add_boolean ok 1
+                json_add_string domains "$(cat /etc/simpleui/custom-domains.txt 2>/dev/null || true)"
+                json_add_string ips "$(cat /etc/simpleui/custom-ips.txt 2>/dev/null || true)"
+                json_dump
+                ;;
+            save_custom)
+                json_load "$payload"
+                json_get_var type type
+                json_get_var content content
+                mkdir -p /etc/simpleui
+                bytes="$(printf '%s' "$content" | wc -c)"
+                if [ "$bytes" -gt 262144 ]; then
+                    reply 0 'Список больше 256 КБ'
+                    exit 0
+                fi
+                case "$type" in
+                    domains) file='/etc/simpleui/custom-domains.txt' ;;
+                    ips) file='/etc/simpleui/custom-ips.txt' ;;
+                    *) reply 0 'Неизвестный тип списка'; exit 0 ;;
+                esac
+                printf '%s\n' "$content" > "$file"
+                reply 1 'Сохранено'
+                ;;
+            *)
+                reply 0 'Unknown method'
+                ;;
+        esac
+        ;;
+esac
