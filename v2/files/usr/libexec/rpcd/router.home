@@ -135,6 +135,25 @@ dns_save() {
     uci commit network; ifup wan >/dev/null 2>&1 || true; /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true; reply 1 'DNS сохранён'
 }
 
+firewall_get() {
+    json_init; json_add_boolean ok 1; json_add_array zones
+    for s in $(uci show firewall 2>/dev/null | sed -n "s/^firewall\.\([^=]*\)=zone$/\1/p"); do
+        json_add_object ""; json_add_string section "$s"; json_add_string name "$(uci -q get firewall.$s.name || echo "$s")"; json_add_string network "$(uci -q get firewall.$s.network || true)"; json_add_string input "$(uci -q get firewall.$s.input || true)"; json_add_string output "$(uci -q get firewall.$s.output || true)"; json_add_string forward "$(uci -q get firewall.$s.forward || true)"; json_add_string masq "$(uci -q get firewall.$s.masq || echo 0)"; json_close_object
+    done
+    json_close_array; json_dump
+}
+
+interface_action() {
+    json_load "$1"; json_get_var interface interface; json_get_var action action
+    [ -n "$interface" ] || { reply 0 'Интерфейс не указан'; return; }
+    case "$action" in
+        up) ifup "$interface" >/dev/null 2>&1 || true; reply 1 'Подключение включено';;
+        down) ifdown "$interface" >/dev/null 2>&1 || true; reply 1 'Подключение отключено';;
+        restart) ifdown "$interface" >/dev/null 2>&1 || true; sleep 1; ifup "$interface" >/dev/null 2>&1 || true; reply 1 'Подключение перезапущено';;
+        *) reply 0 'Неизвестное действие';;
+    esac
+}
+
 system_get() { json_init; json_add_boolean ok 1; json_add_string hostname "$(uci -q get system.@system[0].hostname || hostname)"; json_add_string timezone "$(uci -q get system.@system[0].timezone || true)"; json_add_string zonename "$(uci -q get system.@system[0].zonename || true)"; json_add_string packages "$(apk info 2>/dev/null | sort | tr '\n' ' ')"; json_dump; }
 system_save() { json_load "$1"; json_get_var hostname hostname; [ -n "$hostname" ] && uci set "system.@system[0].hostname=$hostname"; uci commit system; reply 1 'Система сохранена'; }
 backup() { mkdir -p /www/router/downloads; f="/www/router/downloads/openwrt-backup-$(date '+%Y%m%d-%H%M%S').tar.gz"; if sysupgrade -b "$f" >/dev/null 2>&1; then json_init; json_add_boolean ok 1; json_add_string url "${f#/www}"; json_dump; else reply 0 'Не удалось создать backup'; fi; }
@@ -155,6 +174,8 @@ list)
     json_add_object forward_delete; json_add_string section String; json_close_object
     json_add_object dns; json_close_object
     json_add_object dns_save; json_add_string mode String; json_add_string servers String; json_close_object
+    json_add_object firewall; json_close_object
+    json_add_object interface_action; json_add_string interface String; json_add_string action String; json_close_object
     json_add_object system; json_close_object
     json_add_object system_save; json_add_string hostname String; json_close_object
     json_add_object backup; json_close_object
@@ -166,7 +187,7 @@ call)
     case "$method" in
         status) status;; traffic) traffic;; clients) clients;; wifi) wifi_get;; wifi_save) wifi_save "$payload";; connections) connections;;
         routing) routing_get;; routing_save) routing_save "$payload";; forwards) forwards_get;; forward_add) forward_add "$payload";; forward_delete) forward_delete "$payload";;
-        dns) dns_get;; dns_save) dns_save "$payload";; system) system_get;; system_save) system_save "$payload";; backup) backup;;
+        dns) dns_get;; dns_save) dns_save "$payload";; firewall) firewall_get;; interface_action) interface_action "$payload";; system) system_get;; system_save) system_save "$payload";; backup) backup;;
         reboot) reply 1 'Перезагрузка'; (sleep 1; reboot) &;;
         *) reply 0 'Unknown method';;
     esac
