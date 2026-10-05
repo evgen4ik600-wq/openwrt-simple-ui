@@ -3,14 +3,42 @@
     "description": "Router Home standalone UI",
     "read": {
       "ubus": {
-        "router.home": [ "status", "traffic", "clients", "wifi", "connections", "routing", "forwards", "dns", "firewall", "system" ],
-        "system": [ "board", "info" ],
-        "network.interface": [ "dump" ]
+        "router.home": [
+          "status",
+          "traffic",
+          "clients",
+          "wifi",
+          "connections",
+          "routing",
+          "forwards",
+          "dns",
+          "firewall",
+          "system",
+          "opencck_catalog"
+        ],
+        "system": [
+          "board",
+          "info"
+        ],
+        "network.interface": [
+          "dump"
+        ]
       }
     },
     "write": {
       "ubus": {
-        "router.home": [ "wifi_save", "routing_save", "forward_add", "forward_delete", "dns_save", "system_save", "backup", "reboot", "interface_action" ]
+        "router.home": [
+          "wifi_save",
+          "routing_save",
+          "forward_add",
+          "forward_delete",
+          "dns_save",
+          "system_save",
+          "backup",
+          "reboot",
+          "interface_action",
+          "opencck_refresh"
+        ]
       }
     }
   }
