@@ -1,5 +1,6 @@
 #!/bin/sh
 set -u
+IPKG_INSTROOT="${IPKG_INSTROOT:-}"
 
 VPN="${1:-}"
 [ -n "$VPN" ] || exit 1
