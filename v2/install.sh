@@ -1,18 +1,18 @@
 #!/bin/sh
 set -eu
 
-PIN='29dca254dc53a3457ad24e1e588d3afdd912b25e'
+PIN='4787598c6df8c9279fc28e14bc60814d840c6d46'
 BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui'
 SRC="$BASE/$PIN"
 ROOT='/www/router'
 BACK='/root/router-home-backup'
 
-echo '=== Router Home 2.0.1 ==='
+echo '=== Router Home 2.1.0 ==='
 
 release="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.version' 2>/dev/null || true)"
 case "$release" in 25.12.*) : ;; *) echo "ERROR: рассчитано на OpenWrt 25.12.x, найдено: $release"; exit 1;; esac
 
-mkdir -p "$ROOT" "$BACK" /usr/libexec/rpcd /usr/share/rpcd/acl.d
+mkdir -p "$ROOT" "$BACK" /usr/libexec/rpcd /usr/share/rpcd/acl.d /usr/share/router-home /usr/share/simpleui
 if [ -f /www/index.html ] && [ ! -f "$BACK/index.html" ]; then cp -p /www/index.html "$BACK/index.html"; fi
 
 fetch() {
@@ -25,7 +25,9 @@ fetch() {
 echo '[1/4] Installing Router Home backend...'
 fetch 'v2/files/usr/libexec/rpcd/router.home' '/usr/libexec/rpcd/router.home'
 fetch 'v2/files/usr/share/rpcd/acl.d/router-home.json' '/usr/share/rpcd/acl.d/router-home.json'
-chmod +x /usr/libexec/rpcd/router.home
+fetch 'v2/files/usr/share/router-home/opencck-catalog.sh' '/usr/share/router-home/opencck-catalog.sh'
+fetch 'v2/files/usr/share/simpleui/update-rules.sh' '/usr/share/simpleui/update-rules.sh'
+chmod +x /usr/libexec/rpcd/router.home /usr/share/router-home/opencck-catalog.sh /usr/share/simpleui/update-rules.sh
 
 echo '[2/4] Installing standalone web shell...'
 fetch 'v2/www/index.html' "$ROOT/index.html"
@@ -38,7 +40,17 @@ printf '%s\n' "$PIN" > "$ROOT/PIN"
 # only as a recovery backend and is not linked from Router Home.
 cp "$ROOT/index.html" /www/index.html
 
-echo '[3/4] Restarting RPC and web server...'
+echo '[3/4] Refreshing OpenCCK catalog and restarting services...'
+/usr/share/router-home/opencck-catalog.sh >/tmp/router-home-catalog.log 2>&1 || echo 'WARNING: OpenCCK catalog will be loaded on first use.'
+
+# Keep only the Router Home daily updater entry.
+if [ -f /etc/crontabs/root ]; then
+  grep -v '/usr/share/simpleui/update-rules.sh' /etc/crontabs/root > /tmp/router-home-cron || true
+  cat /tmp/router-home-cron > /etc/crontabs/root
+fi
+printf '%s\n' '17 4 * * * [ "$(uci -q get simpleui.main.auto_update)" = "1" ] && /usr/share/simpleui/update-rules.sh >/dev/null 2>&1' >> /etc/crontabs/root
+printf '%s\n' '47 4 * * 0 /usr/share/router-home/opencck-catalog.sh >/dev/null 2>&1' >> /etc/crontabs/root
+/etc/init.d/cron restart >/dev/null 2>&1 || true
 /etc/init.d/rpcd restart
 /etc/init.d/uhttpd restart
 
@@ -53,5 +65,6 @@ The original low-level administration endpoint remains installed for recovery.
 EOF
 
 echo '[4/4] Done.'
+echo 'OpenCCK main + beta catalog enabled.'
 echo 'Open: http://192.168.31.1/'
 echo 'Router Home now owns the root web interface.'
