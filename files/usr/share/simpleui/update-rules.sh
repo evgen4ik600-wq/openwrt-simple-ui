@@ -117,14 +117,14 @@ fi
     echo 'table inet simpleui {'
     echo '  set domain4 { type ipv4_addr; flags interval; auto-merge; }'
     echo '  set domain6 { type ipv6_addr; flags interval; auto-merge; }'
-    echo '  set ip4 { type ipv4_addr; flags interval; auto-merge;'
+    echo '  set geoip4 { type ipv4_addr; flags interval; auto-merge;'
     if [ -s "$IP4" ]; then
         printf '    elements = { '
         awk 'BEGIN{s=""} {printf "%s%s",s,$0; s=", "} END{print ""}' "$IP4"
         echo '    }'
     fi
     echo '  }'
-    echo '  set ip6 { type ipv6_addr; flags interval; auto-merge;'
+    echo '  set geoip6 { type ipv6_addr; flags interval; auto-merge;'
     if [ -s "$IP6" ]; then
         printf '    elements = { '
         awk 'BEGIN{s=""} {printf "%s%s",s,$0; s=", "} END{print ""}' "$IP6"
@@ -134,9 +134,9 @@ fi
     echo '  chain route_prerouting {'
     echo '    type filter hook prerouting priority -160; policy accept;'
     printf '    iifname "%s" ip daddr @domain4 meta mark set 0x51820\n' "$LAN_DEV"
-    printf '    iifname "%s" ip daddr @ip4 meta mark set 0x51820\n' "$LAN_DEV"
+    printf '    iifname "%s" ip daddr @geoip4 meta mark set 0x51820\n' "$LAN_DEV"
     printf '    iifname "%s" ip6 daddr @domain6 meta mark set 0x51820\n' "$LAN_DEV"
-    printf '    iifname "%s" ip6 daddr @ip6 meta mark set 0x51820\n' "$LAN_DEV"
+    printf '    iifname "%s" ip6 daddr @geoip6 meta mark set 0x51820\n' "$LAN_DEV"
     echo '  }'
     if [ "$DNS_INTERCEPT" = '1' ]; then
         echo '  chain dns_intercept {'
