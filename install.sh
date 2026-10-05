@@ -3,9 +3,9 @@ set -eu
 
 REPO='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main'
 FILES="$REPO/files"
-VERSION='1.0.0'
+VERSION='1.0.1'
 
-echo '=== OpenWrt Simple UI 1.0 ==='
+echo '=== OpenWrt Simple UI 1.0.1 ==='
 
 command -v apk >/dev/null 2>&1 || { echo 'ERROR: нужен OpenWrt 25.12+ с apk'; exit 1; }
 command -v wget >/dev/null 2>&1 || { echo 'ERROR: wget не найден'; exit 1; }
@@ -36,10 +36,11 @@ if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then
     [ -n "$free_kb" ] || free_kb=0
     if [ "$free_kb" -ge 1200 ]; then
         echo '[1/6] Installing dnsmasq-full...'
-        if apk add --simulate dnsmasq-full >/dev/null 2>&1; then
-            apk --update-cache add dnsmasq-full >/tmp/simpleui-apk.log 2>&1 || echo 'WARNING: dnsmasq-full install failed; GeoIP will work, GeoSite will stay inactive.'
+        if apk --update-cache add dnsmasq-full >/tmp/simpleui-apk.log 2>&1; then
+            echo 'dnsmasq-full installed.'
         else
-            echo 'WARNING: dnsmasq-full simulation failed; package not changed.'
+            echo 'WARNING: dnsmasq-full install failed; GeoIP will work, GeoSite will stay inactive.'
+            tail -n 4 /tmp/simpleui-apk.log 2>/dev/null || true
         fi
     else
         echo 'WARNING: less than 1.2 MB free flash; dnsmasq-full skipped.'
