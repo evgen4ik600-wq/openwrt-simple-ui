@@ -1,331 +1,130 @@
 #!/bin/sh
 set -eu
 
-VIEWDIR="/www/luci-static/resources/view/simpleui"
-MENUDIR="/usr/share/luci/menu.d"
-ACLDIR="/usr/share/rpcd/acl.d"
+REPO='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main'
+FILES="$REPO/files"
+VERSION='1.0.0'
 
-mkdir -p "$VIEWDIR" "$MENUDIR" "$ACLDIR"
+echo '=== OpenWrt Simple UI 1.0 ==='
 
-# Neutralize only our previous SmartRoute rules. Do not alter WAN/Wi-Fi/AWG.
-if uci -q get smartroute.config >/dev/null 2>&1; then
-  uci set smartroute.config.enabled='0'
-  uci commit smartroute
-fi
+command -v apk >/dev/null 2>&1 || { echo 'ERROR: нужен OpenWrt 25.12+ с apk'; exit 1; }
+command -v wget >/dev/null 2>&1 || { echo 'ERROR: wget не найден'; exit 1; }
+
+release="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.version' 2>/dev/null || true)"
+case "$release" in 25.12.*) : ;; *) echo "WARNING: разработано под OpenWrt 25.12.x, сейчас: $release" ;; esac
+
+mkdir -p /root/simpleui-backup /etc/simpleui
+for f in network firewall dhcp wireless; do
+    [ -f "/etc/config/$f" ] && [ ! -f "/root/simpleui-backup/$f" ] && cp -p "/etc/config/$f" "/root/simpleui-backup/$f"
+done
+
+# Убираем остатки нашего старого эксперимента SmartRoute/PBR.
+/etc/init.d/pbr stop >/dev/null 2>&1 || true
+/etc/init.d/pbr disable >/dev/null 2>&1 || true
+uci -q delete firewall.smartroute_dns || true
 uci -q delete pbr.smartroute_domains || true
 uci -q delete pbr.smartroute_ips || true
-uci -q delete firewall.smartroute_dns || true
-uci commit pbr 2>/dev/null || true
 uci commit firewall 2>/dev/null || true
-/etc/init.d/pbr restart >/dev/null 2>&1 || true
-/etc/init.d/firewall restart >/dev/null 2>&1 || true
+uci commit pbr 2>/dev/null || true
+rm -rf /usr/share/smartroute /www/luci-static/resources/view/smartroute
+rm -f /usr/libexec/rpcd/luci.smartroute /usr/libexec/rpcd/luci.smartroute.bak /usr/share/luci/menu.d/luci-app-smartroute.json /usr/share/rpcd/acl.d/luci-app-smartroute.json /etc/config/smartroute
+apk del luci-app-pbr pbr >/dev/null 2>&1 || true
 
-cat > "$MENUDIR/luci-app-simpleui.json" <<'EOF'
-{
-  "admin/simple": {
-    "title": "Простой режим",
-    "order": 1,
-    "action": { "type": "firstchild", "preferred": "dashboard", "recurse": true },
-    "depends": { "acl": [ "luci-app-simpleui" ] }
-  },
-  "admin/simple/dashboard": {
-    "title": "Главная",
-    "order": 1,
-    "action": { "type": "view", "path": "simpleui/dashboard" }
-  },
-  "admin/simple/internet": {
-    "title": "Интернет",
-    "order": 2,
-    "action": { "type": "alias", "path": "admin/network/network" }
-  },
-  "admin/simple/wifi": {
-    "title": "Wi-Fi",
-    "order": 3,
-    "action": { "type": "alias", "path": "admin/network/wireless" }
-  },
-  "admin/simple/devices": {
-    "title": "Устройства",
-    "order": 4,
-    "action": { "type": "view", "path": "simpleui/devices" }
-  },
-  "admin/simple/vpn": {
-    "title": "VPN",
-    "order": 5,
-    "action": { "type": "view", "path": "simpleui/vpn" }
-  },
-  "admin/simple/system": {
-    "title": "Система",
-    "order": 6,
-    "action": { "type": "alias", "path": "admin/system/system" }
-  },
-  "admin/simple/advanced": {
-    "title": "Расширенные настройки",
-    "order": 90,
-    "action": { "type": "alias", "path": "admin/status/overview" }
-  }
-}
-EOF
+# Для GeoSite нужен dnsmasq с nftset. Это единственный дополнительный системный пакет.
+if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then
+    free_kb="$(df -k /overlay 2>/dev/null | awk 'NR==2{print $4}')"
+    [ -n "$free_kb" ] || free_kb=0
+    if [ "$free_kb" -ge 1200 ]; then
+        echo '[1/6] Installing dnsmasq-full...'
+        if apk add --simulate dnsmasq-full >/dev/null 2>&1; then
+            apk --update-cache add dnsmasq-full >/tmp/simpleui-apk.log 2>&1 || echo 'WARNING: dnsmasq-full install failed; GeoIP will work, GeoSite will stay inactive.'
+        else
+            echo 'WARNING: dnsmasq-full simulation failed; package not changed.'
+        fi
+    else
+        echo 'WARNING: less than 1.2 MB free flash; dnsmasq-full skipped.'
+    fi
+fi
 
-cat > "$ACLDIR/luci-app-simpleui.json" <<'EOF'
-{
-  "luci-app-simpleui": {
-    "description": "Simple UI for OpenWrt",
-    "read": {
-      "uci": [ "network", "wireless", "dhcp", "system" ],
-      "ubus": {
-        "system": [ "board", "info" ],
-        "network.interface": [ "dump" ],
-        "luci-rpc": [ "getDHCPLeases", "getHostHints", "getWirelessDevices", "getNetworkDevices" ]
-      }
-    }
-  }
-}
-EOF
+old_confdir="$(uci -q get dhcp.@dnsmasq[0].confdir || true)"
+[ -f /etc/simpleui/original-dnsmasq-confdir ] || printf '%s\n' "$old_confdir" > /etc/simpleui/original-dnsmasq-confdir
+uci set dhcp.@dnsmasq[0].confdir='/tmp/dnsmasq.d'
+uci commit dhcp
+mkdir -p /tmp/dnsmasq.d
 
-cat > "$VIEWDIR/dashboard.js" <<'EOF'
-'use strict';
-'require view';
-'require rpc';
-'require uci';
-
-var callBoard = rpc.declare({ object: 'system', method: 'board', expect: { '': {} } });
-var callInfo = rpc.declare({ object: 'system', method: 'info', expect: { '': {} } });
-var callIfaces = rpc.declare({ object: 'network.interface', method: 'dump', expect: { interface: [] } });
-var callLeases = rpc.declare({ object: 'luci-rpc', method: 'getDHCPLeases', expect: { '': {} } });
-
-function ip4(i) {
-	if (!i || !Array.isArray(i['ipv4-address']) || !i['ipv4-address'].length) return '—';
-	return i['ipv4-address'][0].address || '—';
+fetch() {
+    src="$1"; dst="$2"
+    mkdir -p "$(dirname "$dst")"
+    tmp="${dst}.new"
+    wget -q -T 25 -O "$tmp" "$FILES/$src" || { rm -f "$tmp"; echo "ERROR downloading $src"; exit 1; }
+    mv "$tmp" "$dst"
 }
 
-function uptimeText(s) {
-	s = Number(s || 0);
-	if (!s) return '—';
-	var d = Math.floor(s / 86400);
-	var h = Math.floor((s % 86400) / 3600);
-	var m = Math.floor((s % 3600) / 60);
-	if (d) return d + ' д ' + h + ' ч';
-	if (h) return h + ' ч ' + m + ' мин';
-	return m + ' мин';
-}
+echo '[2/6] Installing Simple UI files...'
+if [ ! -f /etc/config/simpleui ]; then
+    fetch 'etc/config/simpleui' '/etc/config/simpleui'
+fi
+fetch 'etc/init.d/simpleui-routing' '/etc/init.d/simpleui-routing'
+fetch 'etc/hotplug.d/iface/95-simpleui' '/etc/hotplug.d/iface/95-simpleui'
+fetch 'usr/share/simpleui/catalog.tsv' '/usr/share/simpleui/catalog.tsv'
+fetch 'usr/share/simpleui/disable-routing.sh' '/usr/share/simpleui/disable-routing.sh'
+fetch 'usr/share/simpleui/ensure-firewall.sh' '/usr/share/simpleui/ensure-firewall.sh'
+fetch 'usr/share/simpleui/update-rules.sh' '/usr/share/simpleui/update-rules.sh'
+fetch 'usr/libexec/rpcd/luci.simpleui' '/usr/libexec/rpcd/luci.simpleui'
+fetch 'usr/share/luci/menu.d/luci-app-simpleui.json' '/usr/share/luci/menu.d/luci-app-simpleui.json'
+fetch 'usr/share/rpcd/acl.d/luci-app-simpleui.json' '/usr/share/rpcd/acl.d/luci-app-simpleui.json'
+fetch 'www/luci-static/resources/simpleui.css' '/www/luci-static/resources/simpleui.css'
+for v in dashboard internet wifi devices routing system; do
+    fetch "www/luci-static/resources/view/simpleui/$v.js" "/www/luci-static/resources/view/simpleui/$v.js"
+done
 
-function card(title, state, body, href, button) {
-	var dot = state === true ? '🟢' : (state === false ? '🔴' : '🟡');
-	return E('div', {
-		'style': 'border:1px solid #444;border-radius:14px;padding:18px;min-height:145px;box-sizing:border-box'
-	}, [
-		E('div', {'style':'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px'}, [
-			E('strong', {'style':'font-size:18px'}, title),
-			E('span', {'style':'font-size:16px'}, dot)
-		]),
-		E('div', {'style':'line-height:1.65'}, body),
-		href ? E('div', {'style':'margin-top:14px'}, [
-			E('a', {'class':'btn cbi-button cbi-button-neutral','href':href}, button || 'Открыть')
-		]) : ''
-	]);
-}
+chmod +x /etc/init.d/simpleui-routing /etc/hotplug.d/iface/95-simpleui /usr/share/simpleui/*.sh /usr/libexec/rpcd/luci.simpleui
+printf '%s\n' "$VERSION" > /usr/share/simpleui/VERSION
+[ -f /etc/simpleui/custom-domains.txt ] || : > /etc/simpleui/custom-domains.txt
+[ -f /etc/simpleui/custom-ips.txt ] || : > /etc/simpleui/custom-ips.txt
 
-return view.extend({
-	load: function() {
-		return Promise.all([
-			uci.load('network'),
-			uci.load('wireless'),
-			callBoard(),
-			callInfo(),
-			callIfaces(),
-			callLeases()
-		]);
-	},
+VPN="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
+[ -n "$VPN" ] || VPN="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='wireguard'$/\1/p" | head -n1)"
+if [ -n "$VPN" ]; then
+    uci set simpleui.main.vpn_interface="$VPN"
+else
+    uci set simpleui.main.enabled='0'
+fi
+uci commit simpleui
 
-	render: function(data) {
-		var board = data[2] || {};
-		var info = data[3] || {};
-		var ifaces = data[4] || [];
-		var leases = data[5] || {};
+echo '[3/6] Enabling daily GeoSite/GeoIP refresh...'
+mkdir -p /etc/crontabs
+[ -f /etc/crontabs/root ] || : > /etc/crontabs/root
+grep -v '/usr/share/simpleui/update-rules.sh' /etc/crontabs/root > /tmp/simpleui-cron || true
+printf '%s\n' '17 4 * * * [ "$(uci -q get simpleui.main.auto_update)" = "1" ] && /usr/share/simpleui/update-rules.sh >/dev/null 2>&1' >> /tmp/simpleui-cron
+cat /tmp/simpleui-cron > /etc/crontabs/root
+/etc/init.d/cron enable >/dev/null 2>&1 || true
+/etc/init.d/cron restart >/dev/null 2>&1 || true
+/etc/init.d/simpleui-routing enable >/dev/null 2>&1 || true
 
-		var wan = ifaces.find(function(i) { return i.interface === 'wan'; });
-
-		var awgCfg = uci.sections('network', 'interface').find(function(s) {
-			return s.proto === 'amneziawg';
-		});
-		var awgName = awgCfg ? awgCfg['.name'] : null;
-		var awg = awgName ? ifaces.find(function(i) { return i.interface === awgName; }) : null;
-
-		var wifiIfaces = uci.sections('wireless', 'wifi-iface').filter(function(s) {
-			return s.disabled !== '1';
-		});
-		var wifiDevices = uci.sections('wireless', 'wifi-device').filter(function(s) {
-			return s.disabled !== '1';
-		});
-		var lease4 = Array.isArray(leases.dhcp_leases) ? leases.dhcp_leases : [];
-
-		var grid = E('div', {
-			'style':'display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:16px'
-		}, [
-			card('Интернет', wan ? !!wan.up : false, [
-				E('div', {}, 'Статус: ' + (wan && wan.up ? 'подключён' : 'нет подключения')),
-				E('div', {}, 'IPv4: ' + ip4(wan)),
-				E('div', {}, 'Интерфейс: WAN')
-			], L.url('admin/network/network'), 'Настроить интернет'),
-
-			card('Wi-Fi', wifiIfaces.length > 0, [
-				E('div', {}, 'Точек доступа: ' + wifiIfaces.length),
-				E('div', {}, 'Радиомодулей: ' + wifiDevices.length),
-				E('div', {}, 'Имя сети, пароль, каналы')
-			], L.url('admin/network/wireless'), 'Настроить Wi-Fi'),
-
-			card('AmneziaWG', awg ? !!awg.up : null, [
-				E('div', {}, 'Интерфейс: ' + (awgName || 'не найден')),
-				E('div', {}, 'Статус: ' + (awg ? (awg.up ? 'подключён' : 'отключён') : 'не настроен')),
-				E('div', {}, 'VPN IPv4: ' + ip4(awg))
-			], L.url('admin/simple/vpn'), 'Открыть VPN'),
-
-			card('Устройства', null, [
-				E('div', {}, 'DHCP-клиентов: ' + lease4.length),
-				E('div', {}, 'Домашняя сеть'),
-				E('div', {}, 'IP и имена устройств')
-			], L.url('admin/simple/devices'), 'Показать устройства'),
-
-			card('Система', true, [
-				E('div', {}, board.model || board.system || 'OpenWrt'),
-				E('div', {}, 'OpenWrt: ' + ((board.release && board.release.version) || '—')),
-				E('div', {}, 'Работает: ' + uptimeText(info.uptime))
-			], L.url('admin/system/system'), 'Настройки системы')
-		]);
-
-		return E('div', {}, [
-			E('h2', {}, 'Домашний роутер'),
-			E('p', {}, 'Основные функции без лишних технических параметров. Полная LuCI остаётся доступна через «Расширенные настройки».'),
-			grid
-		]);
-	},
-
-	handleSaveApply: null,
-	handleSave: null,
-	handleReset: null
-});
-EOF
-
-cat > "$VIEWDIR/devices.js" <<'EOF'
-'use strict';
-'require view';
-'require rpc';
-
-var callLeases = rpc.declare({
-	object: 'luci-rpc',
-	method: 'getDHCPLeases',
-	expect: { '': {} }
-});
-
-return view.extend({
-	load: function() { return callLeases(); },
-
-	render: function(data) {
-		var rows = (data && Array.isArray(data.dhcp_leases)) ? data.dhcp_leases : [];
-		var table = E('table', {'class':'table'}, [
-			E('tr', {'class':'tr table-titles'}, [
-				E('th', {'class':'th'}, 'Устройство'),
-				E('th', {'class':'th'}, 'IP'),
-				E('th', {'class':'th'}, 'MAC'),
-				E('th', {'class':'th'}, 'Аренда')
-			])
-		]);
-
-		if (!rows.length) {
-			table.appendChild(E('tr', {'class':'tr'}, [
-				E('td', {'class':'td','colspan':'4'}, 'Активные DHCP-клиенты не найдены')
-			]));
-		} else {
-			rows.forEach(function(l) {
-				table.appendChild(E('tr', {'class':'tr'}, [
-					E('td', {'class':'td'}, l.hostname || 'Без имени'),
-					E('td', {'class':'td'}, l.ipaddr || '—'),
-					E('td', {'class':'td'}, l.macaddr || '—'),
-					E('td', {'class':'td'}, Math.max(0, Math.floor(Number(l.expires || 0) / 60)) + ' мин')
-				]));
-			});
-		}
-
-		return E('div', {}, [
-			E('h2', {}, 'Устройства'),
-			E('p', {}, 'Устройства, получившие IPv4-адрес от роутера.'),
-			table
-		]);
-	},
-
-	handleSaveApply: null,
-	handleSave: null,
-	handleReset: null
-});
-EOF
-
-cat > "$VIEWDIR/vpn.js" <<'EOF'
-'use strict';
-'require view';
-'require rpc';
-'require uci';
-
-var callIfaces = rpc.declare({
-	object: 'network.interface',
-	method: 'dump',
-	expect: { interface: [] }
-});
-
-function ip4(i) {
-	if (!i || !Array.isArray(i['ipv4-address']) || !i['ipv4-address'].length) return '—';
-	return i['ipv4-address'][0].address || '—';
-}
-
-return view.extend({
-	load: function() {
-		return Promise.all([uci.load('network'), callIfaces()]);
-	},
-
-	render: function(data) {
-		var ifaces = data[1] || [];
-		var cfgs = uci.sections('network', 'interface').filter(function(s) {
-			return s.proto === 'amneziawg' || s.proto === 'wireguard';
-		});
-		var box = E('div', {'style':'display:grid;gap:14px;max-width:760px'});
-
-		if (!cfgs.length) {
-			box.appendChild(E('div', {'class':'alert-message warning'}, 'VPN-интерфейсы не найдены.'));
-		}
-
-		cfgs.forEach(function(c) {
-			var name = c['.name'];
-			var st = ifaces.find(function(i) { return i.interface === name; });
-
-			box.appendChild(E('div', {'style':'border:1px solid #444;border-radius:14px;padding:18px'}, [
-				E('h3', {}, name),
-				E('div', {}, 'Тип: ' + (c.proto === 'amneziawg' ? 'AmneziaWG' : 'WireGuard')),
-				E('div', {}, 'Статус: ' + (st && st.up ? '🟢 Подключён' : '🔴 Отключён')),
-				E('div', {}, 'IPv4: ' + ip4(st)),
-				E('div', {'style':'margin-top:14px'}, [
-					E('a', {'class':'btn cbi-button cbi-button-neutral','href':L.url('admin/network/network')}, 'Настроить')
-				])
-			]));
-		});
-
-		return E('div', {}, [
-			E('h2', {}, 'VPN'),
-			E('p', {}, 'Простое состояние AmneziaWG/WireGuard. Маршрутизацию добавим отдельным модулем после проверки этой версии.'),
-			box
-		]);
-	},
-
-	handleSaveApply: null,
-	handleSave: null,
-	handleReset: null
-});
-EOF
-
+echo '[4/6] Restarting DNS and UI...'
+/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+/etc/init.d/rpcd restart >/dev/null 2>&1 || true
 rm -f /tmp/luci-indexcache 2>/dev/null || true
 rm -rf /tmp/luci-modulecache/* 2>/dev/null || true
-/etc/init.d/rpcd restart
-/etc/init.d/uhttpd restart
+/etc/init.d/uhttpd restart >/dev/null 2>&1 || true
 
-echo
-echo "OpenWrt Simple UI v0.1 installed."
-echo "Press Ctrl+F5 and open: Простой режим -> Главная"
-echo "WAN/Wi-Fi/AWG configuration was not changed."
+echo '[5/6] Applying GeoSite/GeoIP routing...'
+if [ -n "$VPN" ]; then
+    if /usr/share/simpleui/update-rules.sh >/tmp/simpleui-first-run.log 2>&1; then
+        echo "Routing active via $VPN"
+    else
+        echo 'WARNING: smart routing did not activate; normal WAN was preserved.'
+        tail -n 5 /tmp/simpleui-first-run.log 2>/dev/null || true
+    fi
+else
+    echo 'No VPN interface detected. UI installed, routing left disabled.'
+fi
+
+/etc/init.d/simpleui-routing restart >/dev/null 2>&1 || true
+
+echo '[6/6] Done.'
+echo 'Open LuCI -> Домашняя сеть -> Обзор'
+echo "Version: $VERSION"
+echo "VPN: ${VPN:-not found}"
+echo "dnsmasq nftset: $(dnsmasq --version 2>/dev/null | grep -q ' nftset ' && echo yes || echo no)"
