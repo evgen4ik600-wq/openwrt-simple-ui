@@ -1,0 +1,7 @@
+'use strict';
+'require view';
+'require rpc';
+var callLeases=rpc.declare({object:'luci-rpc',method:'getDHCPLeases',expect:{'':{}}});
+function css(){if(!document.getElementById('simpleui-css'))document.head.appendChild(E('link',{id:'simpleui-css',rel:'stylesheet',href:L.resource('simpleui.css')}));}
+function remain(s){s=Number(s||0);if(!s)return '—';var h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?h+' ч '+m+' мин':m+' мин';}
+return view.extend({load:function(){return callLeases();},render:function(d){css();var rows=(d&&Array.isArray(d.dhcp_leases))?d.dhcp_leases:[];var t=E('table',{'class':'simpleui-table'},[E('tr',{},[E('th',{},'Устройство'),E('th',{},'IP'),E('th',{},'MAC'),E('th',{},'Аренда')])]);if(!rows.length)t.appendChild(E('tr',{},[E('td',{colspan:'4'},'Активные устройства не найдены')]));rows.forEach(function(x){t.appendChild(E('tr',{},[E('td',{},x.hostname||'Без имени'),E('td',{},x.ipaddr||'—'),E('td',{},x.macaddr||'—'),E('td',{},remain(x.expires))]));});return E('div',{'class':'simpleui-wrap'},[E('div',{'class':'simpleui-hero'},[E('div',{},[E('h2',{'class':'simpleui-title'},'Устройства'),E('div',{'class':'simpleui-sub'},'Клиенты домашней сети — как список устройств в Keenetic.')])]),E('div',{'class':'simpleui-card'},[E('div',{'class':'simpleui-big'},String(rows.length)),E('div',{'class':'simpleui-sub'},'активных DHCP-клиентов'),t])]);},handleSaveApply:null,handleSave:null,handleReset:null});
