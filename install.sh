@@ -3,9 +3,9 @@ set -eu
 
 REPO='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main'
 FILES="$REPO/files"
-VERSION='1.0.1'
+VERSION='1.0.2'
 
-echo '=== OpenWrt Simple UI 1.0.1 ==='
+echo '=== OpenWrt Simple UI 1.0.2 ==='
 
 command -v apk >/dev/null 2>&1 || { echo 'ERROR: нужен OpenWrt 25.12+ с apk'; exit 1; }
 command -v wget >/dev/null 2>&1 || { echo 'ERROR: wget не найден'; exit 1; }
