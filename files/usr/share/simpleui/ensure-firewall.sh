@@ -1,6 +1,10 @@
 #!/bin/sh
-set -u
+# OpenWrt /lib/functions.sh expects several optional globals to be unset.
+# Do not use nounset here.
+set +u
 IPKG_INSTROOT="${IPKG_INSTROOT:-}"
+CONFIG_LIST_STATE="${CONFIG_LIST_STATE:-}"
+CONFIG_SECTION="${CONFIG_SECTION:-}"
 
 VPN="${1:-}"
 [ -n "$VPN" ] || exit 1
