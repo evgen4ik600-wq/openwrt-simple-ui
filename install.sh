@@ -1,12 +1,12 @@
 #!/bin/sh
 set -eu
 
-PIN='8ff43a78fb61c73a1d8311316c35cd0c9211278a'
+PIN='7d9efbbd8e99f81951ec4afe3ba838e58e544747'
 BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui'
 FILES="$BASE/$PIN/files"
-VERSION='1.1.1'
+VERSION='1.1.2'
 
-echo '=== OpenWrt Simple UI 1.1.1 ==='
+echo '=== OpenWrt Simple UI 1.1.2 ==='
 echo "Pinned files: $PIN"
 
 command -v apk >/dev/null 2>&1 || { echo 'ERROR: нужен OpenWrt 25.12+ с apk'; exit 1; }
