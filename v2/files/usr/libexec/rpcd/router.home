@@ -23,12 +23,23 @@ status() {
     json_add_string revision "$(printf '%s' "$board" | jsonfilter -e '@.release.revision' 2>/dev/null || true)"
     json_add_string hostname "$(uci -q get system.@system[0].hostname || hostname)"
     json_add_string uptime "$(printf '%s' "$info" | jsonfilter -e '@.uptime' 2>/dev/null || echo 0)"
-    json_add_boolean wan_up "$(printf '%s' "$wj" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
-    json_add_string wan_ip "$(printf '%s' "$wj" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    wan_ip="$(printf '%s' "$wj" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    wan_flag="$(printf '%s' "$wj" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    if [ -n "$wan_ip" ] && ip -4 route show default 2>/dev/null | grep -q "dev $wd"; then
+        wan_flag=1
+    fi
+    json_add_boolean wan_up "$(bval "$wan_flag")"
+    json_add_string wan_ip "$wan_ip"
     json_add_string wan_dev "$wd"
     json_add_string vpn "$vpn"
-    json_add_boolean vpn_up "$(printf '%s' "$vj" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
-    json_add_string vpn_ip "$(printf '%s' "$vj" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    vpn_ip="$(printf '%s' "$vj" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    vpn_flag="$(printf '%s' "$vj" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    if [ -n "$vpn" ] && [ -n "$vpn_ip" ] && command -v awg >/dev/null 2>&1; then
+        hs="$(awg show "$vpn" latest-handshakes 2>/dev/null | awk 'NR==1 {print $2}')"
+        case "$hs" in ''|0) : ;; *) vpn_flag=1 ;; esac
+    fi
+    json_add_boolean vpn_up "$(bval "$vpn_flag")"
+    json_add_string vpn_ip "$vpn_ip"
     json_add_string vpn_dev "$vd"
     json_add_boolean routing_enabled "$(uci -q get simpleui.main.enabled || echo 0)"
     nft list table inet simpleui >/dev/null 2>&1 && json_add_boolean routing_active 1 || json_add_boolean routing_active 0
