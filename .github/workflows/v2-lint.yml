@@ -1,0 +1,20 @@
+name: v2-lint
+on:
+  push:
+    branches: [ v2-shell ]
+  pull_request:
+    branches: [ v2-shell ]
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: |
+          sh -n v2/files/usr/libexec/rpcd/router.home
+          sh -n v2/install.sh
+          sh -n v2/uninstall.sh
+      - name: JSON syntax
+        run: python3 -m json.tool v2/files/usr/share/rpcd/acl.d/router-home.json >/dev/null
+      - name: JavaScript syntax
+        run: node --check v2/www/app.js
