@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-PIN='4787598c6df8c9279fc28e14bc60814d840c6d46'
+PIN='4f00da139b93df7656707fee92fb27856872105a'
 BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui'
 SRC="$BASE/$PIN"
 ROOT='/www/router'
