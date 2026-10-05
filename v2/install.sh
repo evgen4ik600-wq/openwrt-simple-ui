@@ -1,13 +1,13 @@
 #!/bin/sh
 set -eu
 
-PIN='1cfbc036a6042760a1daa8e82df5ed2905930260'
+PIN='29dca254dc53a3457ad24e1e588d3afdd912b25e'
 BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui'
 SRC="$BASE/$PIN"
 ROOT='/www/router'
 BACK='/root/router-home-backup'
 
-echo '=== Router Home 2.0 preview ==='
+echo '=== Router Home 2.0.1 ==='
 
 release="$(ubus call system board 2>/dev/null | jsonfilter -e '@.release.version' 2>/dev/null || true)"
 case "$release" in 25.12.*) : ;; *) echo "ERROR: рассчитано на OpenWrt 25.12.x, найдено: $release"; exit 1;; esac
