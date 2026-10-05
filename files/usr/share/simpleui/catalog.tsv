@@ -1,0 +1,28 @@
+geosite|youtube|YouTube|small
+geosite|instagram|Instagram|small
+geosite|discord|Discord|small
+geosite|openai|OpenAI / ChatGPT|small
+geosite|telegram|Telegram|small
+geosite|tiktok|TikTok|small
+geosite|github|GitHub|small
+geosite|google|Google|medium
+geosite|twitter|X / Twitter|small
+geosite|reddit|Reddit|small
+geosite|netflix|Netflix|small
+geosite|spotify|Spotify|small
+geosite|twitch|Twitch|small
+geosite|facebook|Facebook|small
+geosite|whatsapp|WhatsApp|small
+geosite|microsoft|Microsoft|medium
+geosite|apple|Apple|medium
+geosite|cloudflare|Cloudflare|medium
+geosite|category-ai-!cn|AI services|medium
+geoip|telegram|Telegram IP|small
+geoip|twitter|X / Twitter IP|small
+geoip|netflix|Netflix IP|small
+geoip|google|Google IP|medium
+geoip|cloudflare|Cloudflare IP|medium
+geoip|ru|Russia IP ranges|large
+geoip|de|Germany IP ranges|large
+geoip|nl|Netherlands IP ranges|large
+geoip|us|United States IP ranges|large
