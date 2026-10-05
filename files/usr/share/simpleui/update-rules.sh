@@ -140,7 +140,7 @@ fi
     echo '}'
 } > "$NFTFILE"
 
-if ! nft -c -f "$NFTFILE" >/dev/null 2>&1; then
+if ! sed 's/^table inet simpleui {/table inet simpleui_check {/' "$NFTFILE" | nft -c -f - >/dev/null 2>&1; then
     rm -f "$DNSFILE"
     log 'generated nftables rules failed validation; old internet path left untouched'
     exit 1
