@@ -19,13 +19,13 @@ var GS=[
  ['youtube','YouTube'],['instagram','Instagram'],['discord','Discord'],['openai','OpenAI / ChatGPT'],['telegram','Telegram'],['tiktok','TikTok'],['github','GitHub'],['google','Google'],['twitter','X / Twitter'],['reddit','Reddit'],['netflix','Netflix'],['spotify','Spotify'],['twitch','Twitch'],['facebook','Facebook'],['whatsapp','WhatsApp'],['microsoft','Microsoft'],['apple','Apple'],['cloudflare','Cloudflare'],['category-ai-!cn','AI-сервисы']
 ];
 var GI=[
- ['telegram','Telegram IP'],['twitter','X / Twitter IP'],['netflix','Netflix IP'],['google','Google IP'],['cloudflare','Cloudflare IP'],['ru','Россия — большой список'],['de','Германия — большой список'],['nl','Нидерланды — большой список'],['us','США — очень большой список']
+ ['telegram','Telegram IP'],['facebook','Facebook / Instagram IP'],['twitter','X / Twitter IP'],['netflix','Netflix IP'],['google','Google / YouTube IP'],['cloudflare','Cloudflare IP'],['ru','Россия — большой список'],['de','Германия — большой список'],['nl','Нидерланды — большой список'],['us','США — очень большой список']
 ];
 
 return view.extend({
  load:function(){return Promise.all([uci.load('simpleui'),uci.load('network'),callStatus(),callCustom()]);},
  render:function(data){css();var stat=data[2]||{},custom=data[3]||{};
-  var m=new form.Map('simpleui','VPN и маршруты','GeoSite/GeoIP без PassWall, sing-box и PBR. Списки скачиваются только в RAM и обновляются автоматически.');
+  var m=new form.Map('simpleui','VPN и маршруты','GeoSite/GeoIP без PassWall, sing-box и PBR. Для мобильных приложений включается IP-резерв: YouTube использует Google IP, Instagram — Facebook IP. Списки хранятся только в RAM.');
   var s=m.section(form.NamedSection,'main','main','Основное');s.anonymous=true;s.addremove=false;
   var o=s.option(form.Flag,'enabled','Умная маршрутизация');o.rmempty=false;
   o=s.option(form.ListValue,'vpn_interface','VPN-интерфейс');o.rmempty=false;
