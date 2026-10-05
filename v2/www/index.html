@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#121d2f">
+  <meta name="theme-color" content="#101b2d">
   <title>Router Home</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/router/style.css">
 </head>
 <body>
   <div id="login" class="login-screen">
@@ -24,6 +24,7 @@
       <button id="menuBtn" class="icon-btn mobile-only">☰</button>
       <div class="brand">ROUTER <span>HOME</span></div>
       <div class="top-actions">
+        <button id="searchBtn" class="icon-btn" title="Поиск">⌕</button>
         <span id="clock"></span>
         <button id="refreshBtn" class="icon-btn" title="Обновить">↻</button>
         <button id="logoutBtn" class="icon-btn" title="Выйти">⏻</button>
@@ -35,10 +36,10 @@
         <div class="nav-group"><div class="nav-title">СТАТУС</div>
           <a class="nav-link active" data-page="dashboard">▦ <span>Системный монитор</span></a>
           <a class="nav-link" data-page="traffic">⌁ <span>Монитор трафика</span></a>
-          <a class="nav-link" data-page="wifi">⌁ <span>Монитор Wi-Fi</span></a>
+          <a class="nav-link" data-page="wifi-monitor">⌁ <span>Монитор Wi-Fi</span></a>
         </div>
         <div class="nav-group"><div class="nav-title">ИНТЕРНЕТ</div>
-          <a class="nav-link" data-page="internet">◎ <span>Подключения</span></a>
+          <a class="nav-link" data-page="connections">◎ <span>Подключения</span></a>
           <a class="nav-link" data-page="vpn">◈ <span>AmneziaWG</span></a>
         </div>
         <div class="nav-group"><div class="nav-title">МОИ СЕТИ И WI-FI</div>
@@ -48,44 +49,27 @@
         <div class="nav-group"><div class="nav-title">СЕТЕВЫЕ ПРАВИЛА</div>
           <a class="nav-link" data-page="routing">⬡ <span>Маршрутизация</span></a>
           <a class="nav-link" data-page="firewall">◇ <span>Межсетевой экран</span></a>
-          <a class="nav-link" data-page="ports">⇄ <span>Переадресация портов</span></a>
+          <a class="nav-link" data-page="forwards">⇄ <span>Переадресация портов</span></a>
           <a class="nav-link" data-page="dns">DNS <span>Доменные имена</span></a>
         </div>
         <div class="nav-group"><div class="nav-title">УПРАВЛЕНИЕ</div>
           <a class="nav-link" data-page="system">⚙ <span>Настройки системы</span></a>
-          <a class="nav-link" href="/cgi-bin/luci/admin/status/overview">↗ <span>Расширенный OpenWrt</span></a>
+          <a class="nav-link" data-page="apps">□ <span>Приложения</span></a>
         </div>
       </nav>
     </aside>
 
-    <main class="content">
-      <section id="page-dashboard" class="page active">
-        <div class="page-head"><h1>Системный монитор</h1><div id="lastUpdate" class="muted"></div></div>
-        <div class="dashboard-grid">
-          <div class="panel panel-tall">
-            <div class="panel-title">ИНТЕРНЕТ</div>
-            <div id="wanCard"></div>
-            <canvas id="wanGraph" height="120"></canvas>
-            <div class="divider"></div>
-            <div id="vpnCard"></div>
-            <canvas id="vpnGraph" height="120"></canvas>
-          </div>
-          <div class="right-stack">
-            <div class="panel"><div class="panel-title">МОИ СЕТИ И WI-FI</div><div id="wifiCard"></div></div>
-            <div class="panel"><div class="panel-title">СЕТЕВЫЕ ПОРТЫ</div><div id="portsCard"></div></div>
-            <div class="panel"><div class="panel-title">УМНАЯ МАРШРУТИЗАЦИЯ</div><div id="routeCard"></div></div>
-            <div class="panel"><div class="panel-title">СИСТЕМА</div><div id="systemCard"></div></div>
-          </div>
-        </div>
-      </section>
+    <main id="content" class="content"></main>
 
-      <section id="page-placeholder" class="page">
-        <div class="page-head"><h1 id="placeholderTitle">Раздел</h1></div>
-        <div class="panel"><p>Этот раздел будет перенесён в новую оболочку на следующем этапе.</p></div>
-      </section>
-    </main>
+    <div id="toast" class="toast hidden"></div>
+    <div id="searchOverlay" class="overlay hidden">
+      <div class="search-box">
+        <input id="searchInput" placeholder="Найти раздел...">
+        <div id="searchResults"></div>
+      </div>
+    </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="/router/app.js"></script>
 </body>
 </html>
