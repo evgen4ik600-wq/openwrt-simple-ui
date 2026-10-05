@@ -1,0 +1,43 @@
+{
+  "admin/simple": {
+    "title": "Домашняя сеть",
+    "order": 1,
+    "action": { "type": "firstchild", "preferred": "dashboard", "recurse": true },
+    "depends": { "acl": [ "luci-app-simpleui" ] }
+  },
+  "admin/simple/dashboard": {
+    "title": "Обзор",
+    "order": 1,
+    "action": { "type": "view", "path": "simpleui/dashboard" }
+  },
+  "admin/simple/internet": {
+    "title": "Интернет",
+    "order": 2,
+    "action": { "type": "view", "path": "simpleui/internet" }
+  },
+  "admin/simple/wifi": {
+    "title": "Wi-Fi",
+    "order": 3,
+    "action": { "type": "view", "path": "simpleui/wifi" }
+  },
+  "admin/simple/devices": {
+    "title": "Устройства",
+    "order": 4,
+    "action": { "type": "view", "path": "simpleui/devices" }
+  },
+  "admin/simple/routing": {
+    "title": "VPN и маршруты",
+    "order": 5,
+    "action": { "type": "view", "path": "simpleui/routing" }
+  },
+  "admin/simple/system": {
+    "title": "Система",
+    "order": 6,
+    "action": { "type": "view", "path": "simpleui/system" }
+  },
+  "admin/simple/advanced": {
+    "title": "Расширенные настройки",
+    "order": 90,
+    "action": { "type": "alias", "path": "admin/status/overview" }
+  }
+}
