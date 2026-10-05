@@ -90,7 +90,32 @@ done
 sed 's/\r$//' "$RUNDIR/domains.raw" 2>/dev/null     | sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d'           -e 's/^+\.//' -e 's/^\.//'           -e 's/^DOMAIN-SUFFIX,//' -e 's/^DOMAIN,//'     | tr '[:upper:]' '[:lower:]'     | awk 'length($0) <= 253 && $0 ~ /^[a-z0-9._-]+$/ { print }'     | sort -u > "$DOMAINS"
 
 : > "$RUNDIR/ip.raw"
-for cat in $(uci -q get simpleui.geoip.enabled 2>/dev/null || true); do
+
+# Start with explicitly selected GeoIP categories.
+GEOIP_CATS="$(uci -q get simpleui.geoip.enabled 2>/dev/null || true)"
+
+append_geoip() {
+    case " $GEOIP_CATS " in
+        *" $1 "*) ;;
+        *) GEOIP_CATS="$GEOIP_CATS $1" ;;
+    esac
+}
+
+# Companion GeoIP fallbacks for apps which may use cached/encrypted DNS.
+# This intentionally broadens some services:
+# YouTube -> Google address space, Instagram/WhatsApp/Facebook -> Facebook address space.
+for site in $(uci -q get simpleui.geosite.enabled 2>/dev/null || true); do
+    case "$site" in
+        youtube|google) append_geoip google ;;
+        instagram|facebook|whatsapp) append_geoip facebook ;;
+        telegram) append_geoip telegram ;;
+        twitter) append_geoip twitter ;;
+        netflix) append_geoip netflix ;;
+        cloudflare) append_geoip cloudflare ;;
+    esac
+done
+
+for cat in $GEOIP_CATS; do
     out="$RUNDIR/geoip-$cat.list"
     if wget -q -T 25 -O "$out" "$BASE/geoip/$cat.list"; then
         cat "$out" >> "$RUNDIR/ip.raw"
