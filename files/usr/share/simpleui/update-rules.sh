@@ -15,6 +15,14 @@ BASE='https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo'
 mkdir -p "$RUNDIR" "$DNSDIR" /etc/simpleui
 : > "$LOGFILE"
 
+LOCKDIR='/tmp/simpleui-update.lock'
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+    logmsg='another update is already running'
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $logmsg" >> "$LOGFILE"
+    exit 0
+fi
+trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
+
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGFILE"
     logger -t simpleui "$*" 2>/dev/null || true
