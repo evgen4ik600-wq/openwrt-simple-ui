@@ -1,0 +1,13 @@
+#!/bin/sh
+VPN="$(uci -q get simpleui.main.vpn_interface || true)"
+[ -n "$VPN" ] || exit 0
+[ "$INTERFACE" = "$VPN" ] || exit 0
+
+case "$ACTION" in
+    ifdown)
+        /usr/share/simpleui/disable-routing.sh >/dev/null 2>&1 || true
+        ;;
+    ifup)
+        ( sleep 3; /usr/share/simpleui/update-rules.sh >/dev/null 2>&1 ) &
+        ;;
+esac
