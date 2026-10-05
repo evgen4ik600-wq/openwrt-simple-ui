@@ -1,0 +1,20 @@
+{
+  "luci-app-simpleui": {
+    "description": "OpenWrt Simple UI",
+    "read": {
+      "uci": [ "simpleui", "network", "wireless", "dhcp", "system", "firewall" ],
+      "ubus": {
+        "system": [ "board", "info" ],
+        "network.interface": [ "dump" ],
+        "luci-rpc": [ "getDHCPLeases", "getHostHints", "getWirelessDevices", "getNetworkDevices" ],
+        "luci.simpleui": [ "status", "get_custom" ]
+      }
+    },
+    "write": {
+      "uci": [ "simpleui", "wireless" ],
+      "ubus": {
+        "luci.simpleui": [ "apply", "update", "save_custom" ]
+      }
+    }
+  }
+}
