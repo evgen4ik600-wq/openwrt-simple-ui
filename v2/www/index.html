@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#121d2f">
+  <title>Router Home</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="login" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <div class="brand">ROUTER <span>HOME</span></div>
+      <h1>Вход в роутер</h1>
+      <label>Пользователь<input id="username" value="root" autocomplete="username"></label>
+      <label>Пароль<input id="password" type="password" autocomplete="current-password"></label>
+      <button type="submit">Войти</button>
+      <div id="loginError" class="error"></div>
+    </form>
+  </div>
+
+  <div id="app" class="shell hidden">
+    <header class="topbar">
+      <button id="menuBtn" class="icon-btn mobile-only">☰</button>
+      <div class="brand">ROUTER <span>HOME</span></div>
+      <div class="top-actions">
+        <span id="clock"></span>
+        <button id="refreshBtn" class="icon-btn" title="Обновить">↻</button>
+        <button id="logoutBtn" class="icon-btn" title="Выйти">⏻</button>
+      </div>
+    </header>
+
+    <aside id="sidebar" class="sidebar">
+      <nav>
+        <div class="nav-group"><div class="nav-title">СТАТУС</div>
+          <a class="nav-link active" data-page="dashboard">▦ <span>Системный монитор</span></a>
+          <a class="nav-link" data-page="traffic">⌁ <span>Монитор трафика</span></a>
+          <a class="nav-link" data-page="wifi">⌁ <span>Монитор Wi-Fi</span></a>
+        </div>
+        <div class="nav-group"><div class="nav-title">ИНТЕРНЕТ</div>
+          <a class="nav-link" data-page="internet">◎ <span>Подключения</span></a>
+          <a class="nav-link" data-page="vpn">◈ <span>AmneziaWG</span></a>
+        </div>
+        <div class="nav-group"><div class="nav-title">МОИ СЕТИ И WI-FI</div>
+          <a class="nav-link" data-page="clients">⌁ <span>Список клиентов</span></a>
+          <a class="nav-link" data-page="accesspoints">◉ <span>Точки доступа</span></a>
+        </div>
+        <div class="nav-group"><div class="nav-title">СЕТЕВЫЕ ПРАВИЛА</div>
+          <a class="nav-link" data-page="routing">⬡ <span>Маршрутизация</span></a>
+          <a class="nav-link" data-page="firewall">◇ <span>Межсетевой экран</span></a>
+          <a class="nav-link" data-page="ports">⇄ <span>Переадресация портов</span></a>
+          <a class="nav-link" data-page="dns">DNS <span>Доменные имена</span></a>
+        </div>
+        <div class="nav-group"><div class="nav-title">УПРАВЛЕНИЕ</div>
+          <a class="nav-link" data-page="system">⚙ <span>Настройки системы</span></a>
+          <a class="nav-link" href="/cgi-bin/luci/admin/status/overview">↗ <span>Расширенный OpenWrt</span></a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <section id="page-dashboard" class="page active">
+        <div class="page-head"><h1>Системный монитор</h1><div id="lastUpdate" class="muted"></div></div>
+        <div class="dashboard-grid">
+          <div class="panel panel-tall">
+            <div class="panel-title">ИНТЕРНЕТ</div>
+            <div id="wanCard"></div>
+            <canvas id="wanGraph" height="120"></canvas>
+            <div class="divider"></div>
+            <div id="vpnCard"></div>
+            <canvas id="vpnGraph" height="120"></canvas>
+          </div>
+          <div class="right-stack">
+            <div class="panel"><div class="panel-title">МОИ СЕТИ И WI-FI</div><div id="wifiCard"></div></div>
+            <div class="panel"><div class="panel-title">СЕТЕВЫЕ ПОРТЫ</div><div id="portsCard"></div></div>
+            <div class="panel"><div class="panel-title">УМНАЯ МАРШРУТИЗАЦИЯ</div><div id="routeCard"></div></div>
+            <div class="panel"><div class="panel-title">СИСТЕМА</div><div id="systemCard"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="page-placeholder" class="page">
+        <div class="page-head"><h1 id="placeholderTitle">Раздел</h1></div>
+        <div class="panel"><p>Этот раздел будет перенесён в новую оболочку на следующем этапе.</p></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
