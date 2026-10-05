@@ -107,6 +107,8 @@ routing_get() {
     json_add_boolean enabled "$(uci -q get simpleui.main.enabled || echo 0)"; json_add_string vpn "$(uci -q get simpleui.main.vpn_interface || true)"
     json_add_boolean dns_intercept "$(uci -q get simpleui.main.dns_intercept || echo 0)"; json_add_boolean auto_update "$(uci -q get simpleui.main.auto_update || echo 1)"
     json_add_string geosite "$(uci -q get simpleui.geosite.enabled || true)"; json_add_string geoip "$(uci -q get simpleui.geoip.enabled || true)"
+    json_add_string opencck_groups "$(uci -q get simpleui.opencck.groups || true)"
+    json_add_string opencck_sites "$(uci -q get simpleui.opencck.sites || true)"
     json_add_string domains "$(cat /etc/simpleui/custom-domains.txt 2>/dev/null || true)"; json_add_string ips "$(cat /etc/simpleui/custom-ips.txt 2>/dev/null || true)"
     json_add_string domain_count "$(cat /tmp/simpleui/domain_count 2>/dev/null || echo 0)"; json_add_string ip_count "$(cat /tmp/simpleui/ip_count 2>/dev/null || echo 0)"
     nft list table inet simpleui >/dev/null 2>&1 && json_add_boolean active 1 || json_add_boolean active 0
@@ -114,10 +116,13 @@ routing_get() {
 }
 
 routing_save() {
-    json_load "$1"; json_get_var enabled enabled; json_get_var vpn vpn; json_get_var dns_intercept dns_intercept; json_get_var auto_update auto_update; json_get_var geosite geosite; json_get_var geoip geoip; json_get_var domains domains; json_get_var ips ips
+    json_load "$1"; json_get_var enabled enabled; json_get_var vpn vpn; json_get_var dns_intercept dns_intercept; json_get_var auto_update auto_update; json_get_var geosite geosite; json_get_var geoip geoip; json_get_var domains domains; json_get_var ips ips; json_get_var opencck_groups opencck_groups; json_get_var opencck_sites opencck_sites
     uci set "simpleui.main.enabled=$(bval "$enabled")"; uci set "simpleui.main.vpn_interface=$vpn"; uci set "simpleui.main.dns_intercept=$(bval "$dns_intercept")"; uci set "simpleui.main.auto_update=$(bval "$auto_update")"
     uci -q delete simpleui.geosite.enabled || true; for x in $geosite; do uci add_list "simpleui.geosite.enabled=$x"; done
     uci -q delete simpleui.geoip.enabled || true; for x in $geoip; do uci add_list "simpleui.geoip.enabled=$x"; done
+    uci -q get simpleui.opencck >/dev/null 2>&1 || uci set simpleui.opencck="opencck"
+    uci -q delete simpleui.opencck.groups || true; for x in $opencck_groups; do uci add_list "simpleui.opencck.groups=$x"; done
+    uci -q delete simpleui.opencck.sites || true; for x in $opencck_sites; do uci add_list "simpleui.opencck.sites=$x"; done
     uci commit simpleui; mkdir -p /etc/simpleui; printf '%s\n' "$domains" >/etc/simpleui/custom-domains.txt; printf '%s\n' "$ips" >/etc/simpleui/custom-ips.txt
     if out="$(/usr/share/simpleui/update-rules.sh 2>&1)"; then reply 1 "${out:-Маршрутизация применена}"; else reply 0 "${out:-Не удалось применить, WAN сохранён}"; fi
 }
@@ -165,6 +170,27 @@ interface_action() {
     esac
 }
 
+opencck_catalog() {
+    file='/tmp/router-home/opencck.tsv'
+    [ -s "$file" ] || /usr/share/router-home/opencck-catalog.sh >/dev/null 2>&1 || true
+    json_init
+    json_add_boolean ok 1
+    json_add_string entries "$(cat "$file" 2>/dev/null || true)"
+    json_dump
+}
+
+opencck_refresh() {
+    if out="$(/usr/share/router-home/opencck-catalog.sh 2>&1)"; then
+        json_init
+        json_add_boolean ok 1
+        json_add_string entries "$(cat /tmp/router-home/opencck.tsv 2>/dev/null || true)"
+        json_add_string message 'Каталог OpenCCK обновлён'
+        json_dump
+    else
+        reply 0 "${out:-Не удалось обновить каталог OpenCCK}"
+    fi
+}
+
 system_get() { json_init; json_add_boolean ok 1; json_add_string hostname "$(uci -q get system.@system[0].hostname || hostname)"; json_add_string timezone "$(uci -q get system.@system[0].timezone || true)"; json_add_string zonename "$(uci -q get system.@system[0].zonename || true)"; json_add_string packages "$(apk info 2>/dev/null | sort | tr '\n' ' ')"; json_dump; }
 system_save() { json_load "$1"; json_get_var hostname hostname; [ -n "$hostname" ] && uci set "system.@system[0].hostname=$hostname"; uci commit system; reply 1 'Система сохранена'; }
 backup() { mkdir -p /www/router/downloads; f="/www/router/downloads/openwrt-backup-$(date '+%Y%m%d-%H%M%S').tar.gz"; if sysupgrade -b "$f" >/dev/null 2>&1; then json_init; json_add_boolean ok 1; json_add_string url "${f#/www}"; json_dump; else reply 0 'Не удалось создать backup'; fi; }
@@ -179,7 +205,7 @@ list)
     json_add_object wifi_save; json_add_string section String; json_add_string ssid String; json_add_string encryption String; json_add_string key String; json_add_string disabled Boolean; json_close_object
     json_add_object connections; json_close_object
     json_add_object routing; json_close_object
-    json_add_object routing_save; json_add_string enabled Boolean; json_add_string vpn String; json_add_string dns_intercept Boolean; json_add_string auto_update Boolean; json_add_string geosite String; json_add_string geoip String; json_add_string domains String; json_add_string ips String; json_close_object
+    json_add_object routing_save; json_add_string enabled Boolean; json_add_string vpn String; json_add_string dns_intercept Boolean; json_add_string auto_update Boolean; json_add_string geosite String; json_add_string geoip String; json_add_string domains String; json_add_string ips String; json_add_string opencck_groups String; json_add_string opencck_sites String; json_close_object
     json_add_object forwards; json_close_object
     json_add_object forward_add; json_add_string name String; json_add_string proto String; json_add_string src_dport String; json_add_string dest_ip String; json_add_string dest_port String; json_close_object
     json_add_object forward_delete; json_add_string section String; json_close_object
@@ -187,6 +213,8 @@ list)
     json_add_object dns_save; json_add_string mode String; json_add_string servers String; json_close_object
     json_add_object firewall; json_close_object
     json_add_object interface_action; json_add_string interface String; json_add_string action String; json_close_object
+    json_add_object opencck_catalog; json_close_object
+    json_add_object opencck_refresh; json_close_object
     json_add_object system; json_close_object
     json_add_object system_save; json_add_string hostname String; json_close_object
     json_add_object backup; json_close_object
@@ -198,7 +226,7 @@ call)
     case "$method" in
         status) status;; traffic) traffic;; clients) clients;; wifi) wifi_get;; wifi_save) wifi_save "$payload";; connections) connections;;
         routing) routing_get;; routing_save) routing_save "$payload";; forwards) forwards_get;; forward_add) forward_add "$payload";; forward_delete) forward_delete "$payload";;
-        dns) dns_get;; dns_save) dns_save "$payload";; firewall) firewall_get;; interface_action) interface_action "$payload";; system) system_get;; system_save) system_save "$payload";; backup) backup;;
+        dns) dns_get;; dns_save) dns_save "$payload";; firewall) firewall_get;; opencck_catalog) opencck_catalog;; opencck_refresh) opencck_refresh;; interface_action) interface_action "$payload";; system) system_get;; system_save) system_save "$payload";; backup) backup;;
         reboot) reply 1 'Перезагрузка'; (sleep 1; reboot) &;;
         *) reply 0 'Unknown method';;
     esac
