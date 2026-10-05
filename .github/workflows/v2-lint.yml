@@ -13,6 +13,8 @@ jobs:
       - name: Shell syntax
         run: |
           sh -n v2/files/usr/libexec/rpcd/router.home
+          sh -n v2/files/usr/share/router-home/opencck-catalog.sh
+          sh -n v2/files/usr/share/simpleui/update-rules.sh
           sh -n v2/install.sh
           sh -n v2/uninstall.sh
       - name: JSON syntax
