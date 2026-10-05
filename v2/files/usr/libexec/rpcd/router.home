@@ -1,0 +1,174 @@
+#!/bin/sh
+
+. /usr/share/libubox/jshn.sh
+
+bval() { case "$1" in 1|true|yes|on) echo 1;; *) echo 0;; esac; }
+counter() { [ -n "$1" ] && [ -r "/sys/class/net/$1/statistics/$2" ] && cat "/sys/class/net/$1/statistics/$2" || echo 0; }
+ifs() { ifstatus "$1" 2>/dev/null || echo '{}'; }
+reply() { json_init; json_add_boolean ok "$1"; [ -n "${2:-}" ] && json_add_string message "$2"; json_dump; }
+
+status() {
+    wj="$(ifs wan)"
+    vpn="$(uci -q get simpleui.main.vpn_interface || true)"
+    [ -n "$vpn" ] || vpn="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
+    vj="$(ifs "$vpn")"
+    wd="$(printf '%s' "$wj" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"; [ -n "$wd" ] || wd=wan
+    vd="$(printf '%s' "$vj" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"; [ -n "$vd" ] || vd="$vpn"
+    board="$(ubus call system board 2>/dev/null || echo '{}')"
+    info="$(ubus call system info 2>/dev/null || echo '{}')"
+    json_init
+    json_add_boolean ok 1
+    json_add_string model "$(printf '%s' "$board" | jsonfilter -e '@.model' 2>/dev/null || true)"
+    json_add_string release "$(printf '%s' "$board" | jsonfilter -e '@.release.version' 2>/dev/null || true)"
+    json_add_string revision "$(printf '%s' "$board" | jsonfilter -e '@.release.revision' 2>/dev/null || true)"
+    json_add_string hostname "$(uci -q get system.@system[0].hostname || hostname)"
+    json_add_string uptime "$(printf '%s' "$info" | jsonfilter -e '@.uptime' 2>/dev/null || echo 0)"
+    json_add_boolean wan_up "$(printf '%s' "$wj" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    json_add_string wan_ip "$(printf '%s' "$wj" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    json_add_string wan_dev "$wd"
+    json_add_string vpn "$vpn"
+    json_add_boolean vpn_up "$(printf '%s' "$vj" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    json_add_string vpn_ip "$(printf '%s' "$vj" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    json_add_string vpn_dev "$vd"
+    json_add_boolean routing_enabled "$(uci -q get simpleui.main.enabled || echo 0)"
+    nft list table inet simpleui >/dev/null 2>&1 && json_add_boolean routing_active 1 || json_add_boolean routing_active 0
+    json_add_string domain_count "$(cat /tmp/simpleui/domain_count 2>/dev/null || echo 0)"
+    json_add_string ip_count "$(cat /tmp/simpleui/ip_count 2>/dev/null || echo 0)"
+    dnsmasq --version 2>/dev/null | grep -q ' nftset ' && json_add_boolean nftset 1 || json_add_boolean nftset 0
+    json_add_string mem_total_kb "$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
+    json_add_string mem_available_kb "$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null)"
+    json_add_string flash_free_kb "$(df -k /overlay 2>/dev/null | awk 'NR==2 {print $4}')"
+    json_dump
+}
+
+traffic() {
+    wj="$(ifs wan)"; vpn="$(uci -q get simpleui.main.vpn_interface || true)"; vj="$(ifs "$vpn")"
+    wd="$(printf '%s' "$wj" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"; [ -n "$wd" ] || wd=wan
+    vd="$(printf '%s' "$vj" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"; [ -n "$vd" ] || vd="$vpn"
+    json_init; json_add_boolean ok 1
+    json_add_string wan_dev "$wd"; json_add_string wan_rx "$(counter "$wd" rx_bytes)"; json_add_string wan_tx "$(counter "$wd" tx_bytes)"
+    json_add_string vpn_dev "$vd"; json_add_string vpn_rx "$(counter "$vd" rx_bytes)"; json_add_string vpn_tx "$(counter "$vd" tx_bytes)"
+    json_add_array ports
+    for d in wan lan1 lan2 lan3 lan4; do
+        [ -e "/sys/class/net/$d" ] || continue
+        json_add_object ""; json_add_string name "$d"; json_add_string carrier "$(cat "/sys/class/net/$d/carrier" 2>/dev/null || echo 0)"; json_add_string speed "$(cat "/sys/class/net/$d/speed" 2>/dev/null || echo 0)"; json_close_object
+    done
+    json_close_array; json_dump
+}
+
+clients() {
+    json_init; json_add_boolean ok 1; json_add_array clients
+    if [ -r /tmp/dhcp.leases ]; then
+        while read -r expiry mac ip host clientid; do
+            [ -n "$ip" ] || continue
+            json_add_object ""; json_add_string hostname "${host:--}"; json_add_string ip "$ip"; json_add_string mac "$mac"; json_add_string expires "$expiry"; json_add_string state "$(ip neigh show "$ip" 2>/dev/null | awk '{print $NF}' | head -n1)"; json_close_object
+        done < /tmp/dhcp.leases
+    fi
+    json_close_array; json_dump
+}
+
+wifi_get() {
+    json_init; json_add_boolean ok 1; json_add_array aps
+    for s in $(uci show wireless 2>/dev/null | sed -n "s/^wireless\.\([^=]*\)=wifi-iface$/\1/p"); do
+        mode="$(uci -q get wireless.$s.mode || echo ap)"; [ "$mode" = ap ] || continue
+        dev="$(uci -q get wireless.$s.device || true)"
+        json_add_object ""
+        json_add_string section "$s"; json_add_string device "$dev"; json_add_string ssid "$(uci -q get wireless.$s.ssid || true)"
+        json_add_string encryption "$(uci -q get wireless.$s.encryption || echo none)"; json_add_string key "$(uci -q get wireless.$s.key || true)"
+        json_add_string disabled "$(uci -q get wireless.$s.disabled || echo 0)"; json_add_string channel "$(uci -q get wireless.$dev.channel || echo auto)"; json_add_string band "$(uci -q get wireless.$dev.band || true)"
+        json_close_object
+    done
+    json_close_array; json_dump
+}
+
+wifi_save() {
+    json_load "$1"; json_get_var section section; json_get_var ssid ssid; json_get_var encryption encryption; json_get_var key key; json_get_var disabled disabled
+    [ -n "$section" ] || { reply 0 'Точка доступа не указана'; return; }
+    uci -q get wireless.$section >/dev/null || { reply 0 'Точка доступа не найдена'; return; }
+    uci set "wireless.$section.ssid=$ssid"; uci set "wireless.$section.encryption=$encryption"; [ "$encryption" = none ] || uci set "wireless.$section.key=$key"; uci set "wireless.$section.disabled=$(bval "$disabled")"; uci commit wireless
+    wifi reload >/dev/null 2>&1 || true; reply 1 'Wi-Fi сохранён'
+}
+
+connections() { json_init; json_add_boolean ok 1; json_add_string dump "$(ubus call network.interface dump 2>/dev/null || echo '{"interface":[]}')"; json_dump; }
+
+routing_get() {
+    json_init; json_add_boolean ok 1
+    json_add_boolean enabled "$(uci -q get simpleui.main.enabled || echo 0)"; json_add_string vpn "$(uci -q get simpleui.main.vpn_interface || true)"
+    json_add_boolean dns_intercept "$(uci -q get simpleui.main.dns_intercept || echo 0)"; json_add_boolean auto_update "$(uci -q get simpleui.main.auto_update || echo 1)"
+    json_add_string geosite "$(uci -q get simpleui.geosite.enabled || true)"; json_add_string geoip "$(uci -q get simpleui.geoip.enabled || true)"
+    json_add_string domains "$(cat /etc/simpleui/custom-domains.txt 2>/dev/null || true)"; json_add_string ips "$(cat /etc/simpleui/custom-ips.txt 2>/dev/null || true)"
+    json_add_string domain_count "$(cat /tmp/simpleui/domain_count 2>/dev/null || echo 0)"; json_add_string ip_count "$(cat /tmp/simpleui/ip_count 2>/dev/null || echo 0)"
+    nft list table inet simpleui >/dev/null 2>&1 && json_add_boolean active 1 || json_add_boolean active 0
+    json_dump
+}
+
+routing_save() {
+    json_load "$1"; json_get_var enabled enabled; json_get_var vpn vpn; json_get_var dns_intercept dns_intercept; json_get_var auto_update auto_update; json_get_var geosite geosite; json_get_var geoip geoip; json_get_var domains domains; json_get_var ips ips
+    uci set "simpleui.main.enabled=$(bval "$enabled")"; uci set "simpleui.main.vpn_interface=$vpn"; uci set "simpleui.main.dns_intercept=$(bval "$dns_intercept")"; uci set "simpleui.main.auto_update=$(bval "$auto_update")"
+    uci -q delete simpleui.geosite.enabled || true; for x in $geosite; do uci add_list "simpleui.geosite.enabled=$x"; done
+    uci -q delete simpleui.geoip.enabled || true; for x in $geoip; do uci add_list "simpleui.geoip.enabled=$x"; done
+    uci commit simpleui; mkdir -p /etc/simpleui; printf '%s\n' "$domains" >/etc/simpleui/custom-domains.txt; printf '%s\n' "$ips" >/etc/simpleui/custom-ips.txt
+    if out="$(/usr/share/simpleui/update-rules.sh 2>&1)"; then reply 1 "${out:-Маршрутизация применена}"; else reply 0 "${out:-Не удалось применить, WAN сохранён}"; fi
+}
+
+forwards_get() {
+    json_init; json_add_boolean ok 1; json_add_array rules
+    for s in $(uci show firewall 2>/dev/null | sed -n "s/^firewall\.\([^=]*\)=redirect$/\1/p"); do
+        json_add_object ""; json_add_string section "$s"; json_add_string name "$(uci -q get firewall.$s.name || echo "$s")"; json_add_string proto "$(uci -q get firewall.$s.proto || echo tcp)"; json_add_string src_dport "$(uci -q get firewall.$s.src_dport || true)"; json_add_string dest_ip "$(uci -q get firewall.$s.dest_ip || true)"; json_add_string dest_port "$(uci -q get firewall.$s.dest_port || true)"; json_close_object
+    done
+    json_close_array; json_dump
+}
+
+forward_add() {
+    json_load "$1"; json_get_var name name; json_get_var proto proto; json_get_var src_dport src_dport; json_get_var dest_ip dest_ip; json_get_var dest_port dest_port
+    [ -n "$src_dport" ] && [ -n "$dest_ip" ] && [ -n "$dest_port" ] || { reply 0 'Заполни IP и порты'; return; }
+    s="$(uci add firewall redirect)"; uci set "firewall.$s.name=${name:-Port forward}"; uci set "firewall.$s.src=wan"; uci set "firewall.$s.dest=lan"; uci set "firewall.$s.proto=${proto:-tcp}"; uci set "firewall.$s.src_dport=$src_dport"; uci set "firewall.$s.dest_ip=$dest_ip"; uci set "firewall.$s.dest_port=$dest_port"; uci set "firewall.$s.target=DNAT"; uci commit firewall; /etc/init.d/firewall restart >/dev/null 2>&1 || true; reply 1 'Правило добавлено'
+}
+
+forward_delete() { json_load "$1"; json_get_var section section; [ -n "$section" ] || { reply 0 'Правило не указано'; return; }; uci -q delete firewall.$section; uci commit firewall; /etc/init.d/firewall restart >/dev/null 2>&1 || true; reply 1 'Правило удалено'; }
+
+dns_get() { json_init; json_add_boolean ok 1; json_add_string peerdns "$(uci -q get network.wan.peerdns || echo 1)"; json_add_string servers "$(uci -q get network.wan.dns || true)"; json_add_string domain "$(uci -q get dhcp.@dnsmasq[0].domain || echo lan)"; json_dump; }
+
+dns_save() {
+    json_load "$1"; json_get_var mode mode; json_get_var servers servers
+    if [ "$mode" = auto ]; then uci set network.wan.peerdns=1; uci -q delete network.wan.dns || true; else uci set network.wan.peerdns=0; uci -q delete network.wan.dns || true; for x in $servers; do uci add_list "network.wan.dns=$x"; done; fi
+    uci commit network; ifup wan >/dev/null 2>&1 || true; /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true; reply 1 'DNS сохранён'
+}
+
+system_get() { json_init; json_add_boolean ok 1; json_add_string hostname "$(uci -q get system.@system[0].hostname || hostname)"; json_add_string timezone "$(uci -q get system.@system[0].timezone || true)"; json_add_string zonename "$(uci -q get system.@system[0].zonename || true)"; json_add_string packages "$(apk info 2>/dev/null | sort | tr '\n' ' ')"; json_dump; }
+system_save() { json_load "$1"; json_get_var hostname hostname; [ -n "$hostname" ] && uci set "system.@system[0].hostname=$hostname"; uci commit system; reply 1 'Система сохранена'; }
+backup() { mkdir -p /www/router/downloads; f="/www/router/downloads/openwrt-backup-$(date '+%Y%m%d-%H%M%S').tar.gz"; if sysupgrade -b "$f" >/dev/null 2>&1; then json_init; json_add_boolean ok 1; json_add_string url "${f#/www}"; json_dump; else reply 0 'Не удалось создать backup'; fi; }
+
+case "${1:-}" in
+list)
+    json_init
+    json_add_object status; json_close_object
+    json_add_object traffic; json_close_object
+    json_add_object clients; json_close_object
+    json_add_object wifi; json_close_object
+    json_add_object wifi_save; json_add_string section String; json_add_string ssid String; json_add_string encryption String; json_add_string key String; json_add_string disabled Boolean; json_close_object
+    json_add_object connections; json_close_object
+    json_add_object routing; json_close_object
+    json_add_object routing_save; json_add_string enabled Boolean; json_add_string vpn String; json_add_string dns_intercept Boolean; json_add_string auto_update Boolean; json_add_string geosite String; json_add_string geoip String; json_add_string domains String; json_add_string ips String; json_close_object
+    json_add_object forwards; json_close_object
+    json_add_object forward_add; json_add_string name String; json_add_string proto String; json_add_string src_dport String; json_add_string dest_ip String; json_add_string dest_port String; json_close_object
+    json_add_object forward_delete; json_add_string section String; json_close_object
+    json_add_object dns; json_close_object
+    json_add_object dns_save; json_add_string mode String; json_add_string servers String; json_close_object
+    json_add_object system; json_close_object
+    json_add_object system_save; json_add_string hostname String; json_close_object
+    json_add_object backup; json_close_object
+    json_add_object reboot; json_close_object
+    json_dump
+;;
+call)
+    method="${2:-}"; payload="$(cat)"
+    case "$method" in
+        status) status;; traffic) traffic;; clients) clients;; wifi) wifi_get;; wifi_save) wifi_save "$payload";; connections) connections;;
+        routing) routing_get;; routing_save) routing_save "$payload";; forwards) forwards_get;; forward_add) forward_add "$payload";; forward_delete) forward_delete "$payload";;
+        dns) dns_get;; dns_save) dns_save "$payload";; system) system_get;; system_save) system_save "$payload";; backup) backup;;
+        reboot) reply 1 'Перезагрузка'; (sleep 1; reboot) &;;
+        *) reply 0 'Unknown method';;
+    esac
+;;
+esac
