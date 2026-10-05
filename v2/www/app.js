@@ -162,20 +162,61 @@ async function renderAccessPoints(){
 window.saveWifi=async function(i,section){try{const r=await home('wifi_save',{section,ssid:$('ssid_'+i).value,encryption:$('enc_'+i).value,key:$('key_'+i).value,disabled:!$('on_'+i).checked});toast(r.message||'Сохранено',!r.ok)}catch(e){toast('Ошибка Wi-Fi',true)}}
 
 async function renderRouting(){
- const r=await home('routing');const selected=new Set(String(r.geosite||'').split(/\s+/).filter(Boolean)),geo=new Set(String(r.geoip||'').split(/\s+/).filter(Boolean));
- $('content').innerHTML=pageHead('Маршрутизация','Сервисы через VPN: домены + IP-резерв там, где он доступен')+
- panel('СОСТОЯНИЕ',row('Маршрутизация',r.active?statusBadge(true,'Активна',''):statusBadge(false,'','Не активна'))+row('VPN',h(r.vpn||'—'))+row('GeoSite',h(r.domain_count)+' доменов')+row('GeoIP',h(r.ip_count)+' сетей'))+
+ const [r,cat]=await Promise.all([home('routing'),home('opencck_catalog')]);
+ const selected=new Set(String(r.geosite||'').split(/\s+/).filter(Boolean));
+ const geo=new Set(String(r.geoip||'').split(/\s+/).filter(Boolean));
+ const occGroups=new Set(String(r.opencck_groups||'').split(/\s+/).filter(Boolean));
+ const occSites=new Set(String(r.opencck_sites||'').split(/\s+/).filter(Boolean));
+ const entries=String(cat.entries||'').split(/\n+/).map(line=>line.split('\t')).filter(x=>x.length>=3).map(x=>({source:x[0],group:x[1],site:x[2]}));
+ const grouped={};
+ entries.forEach(x=>{const k=x.source+'|'+x.group;(grouped[k]||(grouped[k]=[])).push(x.site)});
+ const sourceName=s=>s==='beta'?'Beta':'Основной';
+ const catalogHtml=Object.keys(grouped).sort().map(k=>{
+   const [src,g]=k.split('|'),key=src+':'+g,sites=grouped[k].sort(),groupChecked=occGroups.has(key);
+   const siteHtml=sites.map(site=>'<label class="check occ-site-wrap" data-search="'+h((g+' '+site).toLowerCase())+'"><input class="occ-site" type="checkbox" value="'+h(src+':'+site)+'" '+(occSites.has(src+':'+site)?'checked':'')+'> '+h(site)+'</label>').join('');
+   return '<details class="catalog-group" data-search="'+h((src+' '+g+' '+sites.join(' ')).toLowerCase())+'"><summary><label class="catalog-group-check"><input class="occ-group" type="checkbox" value="'+h(key)+'" '+(groupChecked?'checked':'')+'> '+h(g)+'</label><span>'+sourceName(src)+' · '+sites.length+'</span></summary><div class="checkgrid catalog-sites">'+siteHtml+'</div></details>';
+ }).join('');
+
+ $('content').innerHTML=pageHead('Маршрутизация','Популярные сервисы + полный каталог OpenCCK main/beta')+
+ panel('СОСТОЯНИЕ',row('Маршрутизация',r.active?statusBadge(true,'Активна',''):statusBadge(false,'','Не активна'))+row('VPN',h(r.vpn||'—'))+row('Домены',h(r.domain_count)+' записей')+row('IP / CIDR',h(r.ip_count)+' записей'))+
  '<div class="grid" style="margin-top:12px">'+
- panel('СЕРВИСЫ ЧЕРЕЗ VPN','<div class="checkgrid">'+services.map(x=>'<label class="check"><input class="svc" type="checkbox" value="'+h(x[0])+'" '+(selected.has(x[0])?'checked':'')+'> '+h(x[1])+'</label>').join('')+'</div>')+
+ panel('ПОПУЛЯРНЫЕ СЕРВИСЫ','<div class="checkgrid">'+services.map(x=>'<label class="check"><input class="svc" type="checkbox" value="'+h(x[0])+'" '+(selected.has(x[0])?'checked':'')+'> '+h(x[1])+'</label>').join('')+'</div><div class="note">Быстрый набор MetaCubeX. Для полного выбора используй каталог OpenCCK ниже.</div>')+
  panel('ГЕОГРАФИЯ — РАСШИРЕННО','<div class="checkgrid">'+geoipExtra.map(x=>'<label class="check"><input class="geo" type="checkbox" value="'+h(x[0])+'" '+(geo.has(x[0])?'checked':'')+'> '+h(x[1])+'</label>').join('')+'</div><div class="note warn">Страновые наборы крупные. Включай только нужные.</div>')+
  '</div>'+
+ panel('КАТАЛОГ OPENCCK','<div class="catalog-toolbar"><input id="occSearch" class="input" placeholder="Поиск: ChatGPT, games, YouTube, Twitch..."><button class="btn" onclick="refreshOpenCck()">Обновить каталог</button></div><div class="sub">Доступно: '+entries.length+' порталов из основного и beta-каталогов. Можно выбрать целую группу или отдельные сайты.</div><div id="occCatalog" class="catalog-list">'+catalogHtml+'</div>')+
  '<div class="grid" style="margin-top:12px">'+
  panel('СВОИ ДОМЕНЫ','<label class="field">Один домен на строку<textarea id="customDomains">'+h(r.domains||'')+'</textarea></label>')+
  panel('СВОИ IP / CIDR','<label class="field">Один IP или CIDR на строку<textarea id="customIps">'+h(r.ips||'')+'</textarea></label>')+
  '</div>'+
- panel('ПАРАМЕТРЫ','<label class="check"><input id="routingOn" type="checkbox" '+(r.enabled?'checked':'')+'> Умная маршрутизация включена</label><label class="check"><input id="dnsIntercept" type="checkbox" '+(r.dns_intercept?'checked':'')+'> Перехватывать обычный DNS клиентов</label><label class="check"><input id="autoUpdate" type="checkbox" '+(r.auto_update?'checked':'')+'> Обновлять списки раз в сутки</label><div class="actions"><button class="btn primary" onclick="saveRouting()">Сохранить и применить</button></div>','') ;
+ panel('ПАРАМЕТРЫ','<label class="check"><input id="routingOn" type="checkbox" '+(r.enabled?'checked':'')+'> Умная маршрутизация включена</label><label class="check"><input id="dnsIntercept" type="checkbox" '+(r.dns_intercept?'checked':'')+'> Перехватывать обычный DNS клиентов</label><label class="check"><input id="autoUpdate" type="checkbox" '+(r.auto_update?'checked':'')+'> Обновлять списки раз в сутки</label><div class="actions"><button class="btn primary" onclick="saveRouting()">Сохранить и применить</button></div>');
+
+ const search=$('occSearch');
+ if(search)search.oninput=()=>{
+   const q=search.value.trim().toLowerCase();
+   document.querySelectorAll('.catalog-group').forEach(d=>{
+     const match=!q||String(d.dataset.search||'').includes(q);
+     d.style.display=match?'block':'none';
+     if(q&&match)d.open=true;
+   });
+ };
+ document.querySelectorAll('.occ-group').forEach(cb=>cb.onchange=()=>{
+   const details=cb.closest('details');
+   if(!details)return;
+   details.querySelectorAll('.occ-site').forEach(s=>{s.disabled=cb.checked; if(cb.checked)s.checked=false});
+ });
+ document.querySelectorAll('.occ-group:checked').forEach(cb=>cb.dispatchEvent(new Event('change')));
 }
-window.saveRouting=async function(){const geosite=[...document.querySelectorAll('.svc:checked')].map(x=>x.value).join(' '),geoip=[...document.querySelectorAll('.geo:checked')].map(x=>x.value).join(' ');try{const r=await home('routing_save',{enabled:$('routingOn').checked,vpn:(state.status&&state.status.vpn)||'AWG',dns_intercept:$('dnsIntercept').checked,auto_update:$('autoUpdate').checked,geosite,geoip,domains:$('customDomains').value,ips:$('customIps').value});toast(r.message||'Применено',!r.ok);setTimeout(()=>navigate('routing'),1000)}catch(e){toast('Ошибка маршрутизации',true)}}
+window.refreshOpenCck=async function(){try{const r=await home('opencck_refresh');toast(r.message||'Каталог обновлён',!r.ok);setTimeout(()=>navigate('routing'),500)}catch(e){toast('Не удалось обновить OpenCCK',true)}}
+window.saveRouting=async function(){
+ const geosite=[...document.querySelectorAll('.svc:checked')].map(x=>x.value).join(' ');
+ const geoip=[...document.querySelectorAll('.geo:checked')].map(x=>x.value).join(' ');
+ const opencck_groups=[...document.querySelectorAll('.occ-group:checked')].map(x=>x.value).join(' ');
+ const opencck_sites=[...document.querySelectorAll('.occ-site:checked:not(:disabled)')].map(x=>x.value).join(' ');
+ try{
+  const r=await home('routing_save',{enabled:$('routingOn').checked,vpn:(state.status&&state.status.vpn)||'AWG',dns_intercept:$('dnsIntercept').checked,auto_update:$('autoUpdate').checked,geosite,geoip,opencck_groups,opencck_sites,domains:$('customDomains').value,ips:$('customIps').value});
+  toast(r.message||'Применено',!r.ok);setTimeout(()=>navigate('routing'),1000)
+ }catch(e){toast('Ошибка маршрутизации',true)}
+}
 
 async function renderFirewall(){
  const r=await home('firewall'),z=r.zones||[];
