@@ -17,7 +17,21 @@ RULE_PRIO='1066'
 log() { logger -t easyroute "$*" 2>/dev/null || true; }
 
 get_iface() {
-    uci -q get easyroute.main.interface 2>/dev/null || echo 'AWG'
+    local configured proto detected
+    configured="$(uci -q get easyroute.main.interface 2>/dev/null || true)"
+    if [ -n "$configured" ]; then
+        proto="$(uci -q get "network.$configured.proto" 2>/dev/null || true)"
+        if [ "$proto" = 'amneziawg' ] || ip link show "$configured" >/dev/null 2>&1 || { command -v awg >/dev/null 2>&1 && awg show "$configured" >/dev/null 2>&1; }; then
+            printf '%s\n' "$configured"
+            return 0
+        fi
+    fi
+    detected="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
+    if [ -n "$detected" ]; then
+        printf '%s\n' "$detected"
+    else
+        printf '%s\n' "${configured:-AWG}"
+    fi
 }
 
 iface_status_json() {
