@@ -21,7 +21,7 @@ reply_error() {
 list_aliases() {
     json_init
     json_add_boolean ok 1
-    json_add_object aliases
+    json_add_array clients
 
     for sec in $(uci show "$CFG" 2>/dev/null | sed -n "s/^$CFG\.\([^.=]*\)=client$/\1/p"); do
         mac="$(uci -q get "$CFG.$sec.mac" 2>/dev/null || true)"
@@ -29,10 +29,13 @@ list_aliases() {
         valid_mac "$mac" || continue
         [ -n "$name" ] || continue
         mac="$(printf '%s' "$mac" | tr 'a-f' 'A-F')"
-        json_add_string "$mac" "$name"
+        json_add_object ''
+        json_add_string mac "$mac"
+        json_add_string name "$name"
+        json_close_object
     done
 
-    json_close_object
+    json_close_array
     json_dump
 }
 
