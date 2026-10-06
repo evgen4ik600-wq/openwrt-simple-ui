@@ -20,20 +20,33 @@ get_iface() {
     uci -q get easyroute.main.interface 2>/dev/null || echo 'AWG'
 }
 
+iface_status_json() {
+    local iface="$1" out
+    out="$(ifstatus "$iface" 2>/dev/null || true)"
+    [ -n "$out" ] || out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    printf '%s' "$out"
+}
+
 get_dev() {
     local iface="$1" out dev
-    out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    out="$(iface_status_json "$iface")"
     dev="$(printf '%s' "$out" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"
     [ -n "$dev" ] || dev="$(printf '%s' "$out" | jsonfilter -e '@.device' 2>/dev/null || true)"
+    [ -n "$dev" ] || {
+        ip link show "$iface" >/dev/null 2>&1 && dev="$iface"
+    }
     [ -n "$dev" ] || dev="$iface"
     printf '%s\n' "$dev"
 }
 
 iface_up() {
     local iface="$1" out up
-    out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    out="$(iface_status_json "$iface")"
     up="$(printf '%s' "$out" | jsonfilter -e '@.up' 2>/dev/null || true)"
-    [ "$up" = 'true' ]
+    [ "$up" = 'true' ] && return 0
+    ip link show "$iface" >/dev/null 2>&1 && return 0
+    command -v awg >/dev/null 2>&1 && awg show "$iface" >/dev/null 2>&1 && return 0
+    return 1
 }
 
 route_down() {
