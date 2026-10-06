@@ -1,0 +1,15 @@
+{
+  "luci-app-easyroute": {
+    "description": "EasyRoute VPN routing",
+    "read": {
+      "ubus": {
+        "luci.easyroute": [ "status", "list_rules", "get_rule" ]
+      }
+    },
+    "write": {
+      "ubus": {
+        "luci.easyroute": [ "save_rule", "delete_rule", "apply" ]
+      }
+    }
+  }
+}
