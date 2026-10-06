@@ -20,11 +20,20 @@ return baseclass.extend({
 	title: 'Client names helper',
 
 	load() {
-		return L.resolveDefault(callClientNamesList(), { aliases: {} });
+		return L.resolveDefault(callClientNamesList(), { clients: [] });
 	},
 
 	render(data) {
-		this.aliases = (data && data.aliases) ? data.aliases : {};
+		this.aliases = {};
+		const clients = (data && Array.isArray(data.clients)) ? data.clients : [];
+
+		for (let i = 0; i < clients.length; i++) {
+			const mac = String(clients[i].mac || '').toUpperCase();
+			const name = String(clients[i].name || '');
+			if (/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/.test(mac) && name)
+				this.aliases[mac] = name;
+		}
+
 		this.scheduleEnhance(6);
 		return null;
 	},
