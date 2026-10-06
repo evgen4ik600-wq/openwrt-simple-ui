@@ -8,7 +8,7 @@
     },
     "write": {
       "ubus": {
-        "luci.easyroute": [ "save_rule", "delete_rule", "apply" ]
+        "luci.easyroute": [ "save_rule", "delete_rule", "apply", "update_rule", "update_all" ]
       }
     }
   }
