@@ -1,0 +1,53 @@
+name: EasyRoute CI
+
+on:
+  push:
+    paths:
+      - 'easyroute/**'
+      - 'openwrt-easyroute-install.sh'
+      - '.github/workflows/easyroute-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          set -eu
+          dash -n openwrt-easyroute-install.sh
+          dash -n easyroute/install.sh
+          dash -n easyroute/uninstall.sh
+          dash -n easyroute/files/usr/libexec/easyroute
+          dash -n easyroute/files/usr/libexec/rpcd/luci.easyroute
+          dash -n easyroute/files/etc/init.d/easyroute
+          dash -n easyroute/files/etc/hotplug.d/iface/95-easyroute
+
+      - name: JSON syntax
+        run: |
+          python3 -m json.tool easyroute/files/usr/share/luci/menu.d/luci-app-easyroute.json >/dev/null
+          python3 -m json.tool easyroute/files/usr/share/rpcd/acl.d/luci-app-easyroute.json >/dev/null
+
+      - name: LuCI JavaScript syntax
+        run: |
+          node -e "new Function(require('fs').readFileSync('easyroute/files/www/luci-static/resources/view/easyroute/routes.js','utf8'))"
+
+      - name: Installer references
+        run: |
+          set -eu
+          grep -q '03b62269e2edc168504f057cffaafda11b25ed92' easyroute/install.sh
+          grep -q "v3\\.1" easyroute/install.sh
+          grep -q "dnsmasq-full" easyroute/install.sh
+          grep -q "files/usr/libexec/easyroute" easyroute/install.sh
+          grep -q "files/www/luci-static/resources/view/easyroute/routes.js" easyroute/install.sh
+
+      - name: EasyRoute invariants
+        run: |
+          set -eu
+          grep -q "MARK='0x66'" easyroute/files/usr/libexec/easyroute
+          grep -q "TABLE='166'" easyroute/files/usr/libexec/easyroute
+          grep -q "nftset=/" easyroute/files/usr/libexec/easyroute
+          grep -q "proto='amneziawg'" easyroute/files/usr/libexec/easyroute
+          grep -q "proto='amneziawg'" easyroute/files/etc/hotplug.d/iface/95-easyroute
