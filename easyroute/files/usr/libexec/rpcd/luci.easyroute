@@ -20,8 +20,33 @@ rule_ids() {
     uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=rule$/\1/p"
 }
 
+detect_iface() {
+    local configured proto detected
+    configured="$(uci -q get easyroute.main.interface 2>/dev/null || true)"
+    if [ -n "$configured" ]; then
+        proto="$(uci -q get "network.$configured.proto" 2>/dev/null || true)"
+        if [ "$proto" = 'amneziawg' ] || ip link show "$configured" >/dev/null 2>&1 || { command -v awg >/dev/null 2>&1 && awg show "$configured" >/dev/null 2>&1; }; then
+            printf '%s\n' "$configured"
+            return 0
+        fi
+    fi
+    detected="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
+    if [ -n "$detected" ]; then
+        printf '%s\n' "$detected"
+    else
+        printf '%s\n' "${configured:-AWG}"
+    fi
+}
+
 status() {
-    iface="$(uci -q get easyroute.main.interface 2>/dev/null || echo AWG)"
+    iface="$(detect_iface)"
+    awg_installed=false
+    awg_configured=false
+    command -v awg >/dev/null 2>&1 && awg_installed=true
+    proto="$(uci -q get "network.$iface.proto" 2>/dev/null || true)"
+    [ "$proto" = 'amneziawg' ] && awg_configured=true
+    command -v awg >/dev/null 2>&1 && awg show "$iface" >/dev/null 2>&1 && awg_configured=true
+
     out="$(ifstatus "$iface" 2>/dev/null || true)"
     [ -n "$out" ] || out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
     up="$(printf '%s' "$out" | jsonfilter -e '@.up' 2>/dev/null || true)"
@@ -34,7 +59,7 @@ status() {
         ts="$(awg show "$iface" latest-handshakes 2>/dev/null | awk 'NR==1{print $2}')"
         case "$ts" in
             ''|0) : ;;
-            *) now="$(date +%s)"; hs="$((now-ts))"; up=true ;;
+            *) now="$(date +%s)"; hs="$((now-ts))"; up=true; awg_configured=true ;;
         esac
     fi
     total=0; active=0
@@ -47,6 +72,8 @@ status() {
     json_init
     json_add_boolean ok 1
     json_add_string interface "$iface"
+    if [ "$awg_installed" = "true" ]; then json_add_boolean awg_installed 1; else json_add_boolean awg_installed 0; fi
+    if [ "$awg_configured" = "true" ]; then json_add_boolean awg_configured 1; else json_add_boolean awg_configured 0; fi
     if [ "$up" = "true" ]; then json_add_boolean vpn_up 1; else json_add_boolean vpn_up 0; fi
     json_add_string vpn_ip "$ip4"
     json_add_string handshake_age "$hs"
