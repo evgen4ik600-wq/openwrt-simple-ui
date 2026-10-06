@@ -15,10 +15,23 @@ if [ -f /etc/dnsmasq.conf ]; then
     rm -f /tmp/dnsmasq.conf.easyroute
 fi
 
-rm -f /usr/libexec/easyroute /usr/libexec/rpcd/luci.easyroute /etc/init.d/easyroute /etc/hotplug.d/iface/95-easyroute
+rm -f /usr/libexec/easyroute /usr/libexec/easyroute-url-update /usr/libexec/rpcd/luci.easyroute /etc/init.d/easyroute /etc/hotplug.d/iface/95-easyroute
 rm -f /usr/share/luci/menu.d/luci-app-easyroute.json /usr/share/rpcd/acl.d/luci-app-easyroute.json
 rm -rf /www/luci-static/resources/view/easyroute
 rm -f /etc/config/easyroute
+
+if [ -f /etc/crontabs/root ]; then
+    awk '
+      $0=="# EASYROUTE-URL-UPDATE-BEGIN" {skip=1; next}
+      $0=="# EASYROUTE-URL-UPDATE-END" {skip=0; next}
+      skip!=1 {print}
+    ' /etc/crontabs/root > /tmp/easyroute-cron.$
+    cat /tmp/easyroute-cron.$ > /etc/crontabs/root
+    rm -f /tmp/easyroute-cron.$
+    /etc/init.d/cron restart >/dev/null 2>&1 || true
+fi
+rm -rf /tmp/easyroute/url-updates
+
 # Списки и backup оставляем в /etc/easyroute на случай восстановления.
 fw4 reload >/dev/null 2>&1 || true
 /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
