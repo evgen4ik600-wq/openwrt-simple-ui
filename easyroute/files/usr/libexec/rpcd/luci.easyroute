@@ -56,12 +56,19 @@ status() {
         if ip link show "$iface" >/dev/null 2>&1; then up=true; else up=false; fi
     }
     hs=''
+    rx_bytes='0'
+    tx_bytes='0'
     if command -v awg >/dev/null 2>&1; then
         ts="$(awg show "$iface" latest-handshakes 2>/dev/null | awk 'NR==1{print $2}')"
         case "$ts" in
             ''|0) : ;;
             *) now="$(date +%s)"; hs="$((now-ts))"; up=true; awg_configured=true ;;
         esac
+        transfer="$(awg show "$iface" transfer 2>/dev/null | awk '{rx+=$2; tx+=$3} END{printf "%.0f %.0f", rx+0, tx+0}')"
+        rx_bytes="$(printf '%s' "$transfer" | awk '{print $1}')"
+        tx_bytes="$(printf '%s' "$transfer" | awk '{print $2}')"
+        [ -n "$rx_bytes" ] || rx_bytes='0'
+        [ -n "$tx_bytes" ] || tx_bytes='0'
     fi
     total=0; active=0
     for id in $(rule_ids); do
@@ -78,6 +85,8 @@ status() {
     if [ "$up" = "true" ]; then json_add_boolean vpn_up 1; else json_add_boolean vpn_up 0; fi
     json_add_string vpn_ip "$ip4"
     json_add_string handshake_age "$hs"
+    json_add_string rx_bytes "$rx_bytes"
+    json_add_string tx_bytes "$tx_bytes"
     json_add_int rules "$total"
     json_add_int active "$active"
     json_add_string domain_count "$(cat /tmp/easyroute/domain_count 2>/dev/null || echo 0)"
