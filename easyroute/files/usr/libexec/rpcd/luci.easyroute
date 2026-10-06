@@ -22,13 +22,20 @@ rule_ids() {
 
 status() {
     iface="$(uci -q get easyroute.main.interface 2>/dev/null || echo AWG)"
-    out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
-    up="$(printf '%s' "$out" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    out="$(ifstatus "$iface" 2>/dev/null || true)"
+    [ -n "$out" ] || out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    up="$(printf '%s' "$out" | jsonfilter -e '@.up' 2>/dev/null || true)"
     ip4="$(printf '%s' "$out" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    [ "$up" = 'true' ] || {
+        if ip link show "$iface" >/dev/null 2>&1; then up=true; else up=false; fi
+    }
     hs=''
     if command -v awg >/dev/null 2>&1; then
         ts="$(awg show "$iface" latest-handshakes 2>/dev/null | awk 'NR==1{print $2}')"
-        case "$ts" in ''|0) : ;; *) now="$(date +%s)"; hs="$((now-ts))" ;; esac
+        case "$ts" in
+            ''|0) : ;;
+            *) now="$(date +%s)"; hs="$((now-ts))"; up=true ;;
+        esac
     fi
     total=0; active=0
     for id in $(rule_ids); do
