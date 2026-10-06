@@ -6,17 +6,30 @@
 var callStatus = rpc.declare({ object: 'luci.easyroute', method: 'status', expect: { '': {} } });
 var callList = rpc.declare({ object: 'luci.easyroute', method: 'list_rules', expect: { '': {} } });
 var callGet = rpc.declare({ object: 'luci.easyroute', method: 'get_rule', params: [ 'id' ], expect: { '': {} } });
-var callSave = rpc.declare({ object: 'luci.easyroute', method: 'save_rule', params: [ 'id', 'name', 'enabled', 'content' ], expect: { '': {} } });
+var callSave = rpc.declare({ object: 'luci.easyroute', method: 'save_rule', params: [ 'id', 'name', 'enabled', 'content', 'source_type', 'source_url', 'auto_update', 'update_interval' ], expect: { '': {} } });
 var callDelete = rpc.declare({ object: 'luci.easyroute', method: 'delete_rule', params: [ 'id' ], expect: { '': {} } });
 var callUpdateRule = rpc.declare({ object: 'luci.easyroute', method: 'update_rule', params: [ 'id' ], expect: { '': {} } });
 var callUpdateAll = rpc.declare({ object: 'luci.easyroute', method: 'update_all', expect: { '': {} } });
 var callApply = rpc.declare({ object: 'luci.easyroute', method: 'apply', expect: { '': {} } });
 
+function formatBytes(v) {
+    var n = Number(v || 0);
+    if (!isFinite(n) || n < 0) n = 0;
+    if (n < 1024) return Math.round(n) + ' Б';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10 * 1024 ? 1 : 0) + ' КБ';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0) + ' МБ';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' ГБ';
+}
+
+function trafficText(s) {
+    return ' · ↓ ' + formatBytes(s.rx_bytes) + ' · ↑ ' + formatBytes(s.tx_bytes);
+}
+
 function vpnText(s) {
     if (!s.awg_installed) return 'компонент AmneziaWG не установлен';
     if (!s.awg_configured) return 'AmneziaWG установлен, подключение ещё не добавлено';
-    if (s.handshake_age) return 'подключён, handshake ' + s.handshake_age + ' сек. назад';
-    if (s.vpn_up) return 'интерфейс поднят, ждём handshake';
+    if (s.handshake_age) return 'подключён, handshake ' + s.handshake_age + ' сек. назад' + trafficText(s);
+    if (s.vpn_up) return 'интерфейс поднят, ждём handshake' + trafficText(s);
     return 'не подключён';
 }
 
