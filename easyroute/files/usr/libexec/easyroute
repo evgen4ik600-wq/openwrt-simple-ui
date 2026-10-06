@@ -138,6 +138,11 @@ parse_all() {
           else if(line ~ /^full:/) sub(/^full:/,"",line);
           else if(line ~ /^(keyword|regexp|include):/){print "U\t" line; next}
 
+          # URL-списки OpenCCK могут возвращать wildcard-домены (*.example.com).
+          # Для dnsmasq достаточно базового домена: он охватывает и поддомены.
+          sub(/^\*\./,"",line);
+          sub(/^\./,"",line);
+
           raw=line; n=split(line,a,/[ \t]+/);
           if(n>1 && a[2] !~ /^@/){print "X\t" raw; next}
           line=a[1]; line=trim(line);
