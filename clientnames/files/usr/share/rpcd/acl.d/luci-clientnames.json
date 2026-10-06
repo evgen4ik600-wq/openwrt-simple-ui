@@ -1,0 +1,15 @@
+{
+  "luci-clientnames": {
+    "description": "Manage friendly names for connected Wi-Fi clients",
+    "read": {
+      "ubus": {
+        "luci.clientnames": [ "list" ]
+      }
+    },
+    "write": {
+      "ubus": {
+        "luci.clientnames": [ "set" ]
+      }
+    }
+  }
+}
