@@ -2,6 +2,7 @@
 set -eu
 
 REPO_BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main/easyroute'
+AWG_INSTALL_URL='https://raw.githubusercontent.com/Slava-Shchipunov/awg-openwrt/03b62269e2edc168504f057cffaafda11b25ed92/amneziawg-install.sh'
 TMP='/tmp/easyroute-install'
 BACKUP='/etc/easyroute/backup'
 
@@ -12,7 +13,10 @@ fail() { printf 'ОШИБКА: %s\n' "$*" >&2; exit 1; }
 [ -f /etc/openwrt_release ] || fail 'Это не OpenWrt.'
 
 VER="$(. /etc/openwrt_release; printf '%s' "${DISTRIB_RELEASE:-unknown}")"
-case "$VER" in 25.12*|26.*|27.*) ;; *) fail "Поддерживается OpenWrt 25.12.x и новее. Сейчас: $VER" ;; esac
+case "$VER" in
+    25.12*) ;;
+    *) fail "Эта стабильная сборка проверена для OpenWrt 25.12.x. Сейчас: $VER" ;;
+esac
 
 command -v apk >/dev/null 2>&1 || fail 'Не найден apk.'
 command -v uci >/dev/null 2>&1 || fail 'Не найден uci.'
@@ -21,21 +25,39 @@ command -v nft >/dev/null 2>&1 || fail 'Не найден nftables.'
 command -v ip >/dev/null 2>&1 || fail 'Не найдена команда ip.'
 command -v wget >/dev/null 2>&1 || fail 'Не найден wget.'
 [ -r /usr/share/libubox/jshn.sh ] || fail 'Не найден jshn (libubox).'
-[ -d /www/luci-static/resources/view ] || fail 'LuCI не установлен.'
+[ -d /www/luci-static/resources/view ] || fail 'LuCI не установлен. Используйте образ OpenWrt с LuCI.'
+
 AUTO_INC="$(uci -q get firewall.@defaults[0].auto_includes 2>/dev/null || echo 1)"
 [ "$AUTO_INC" != '0' ] || fail 'В firewall отключён auto_includes. Включите его перед установкой.'
-
-IFACE="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
-[ -n "$IFACE" ] || { ip link show AWG >/dev/null 2>&1 && IFACE='AWG'; }
-[ -n "$IFACE" ] || fail 'AmneziaWG-интерфейс не найден. Сначала создайте рабочий AWG.'
 
 FREE_KB="$(df -k /overlay 2>/dev/null | awk 'NR==2{print $4}')"
 [ -n "$FREE_KB" ] || FREE_KB="$(df -k / 2>/dev/null | awk 'NR==2{print $4}')"
 MIN_KB=700
-if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then MIN_KB=1200; fi
-[ "${FREE_KB:-0}" -ge "$MIN_KB" ] || fail "Слишком мало свободной flash: ${FREE_KB:-0} КБ. Нужно минимум ${MIN_KB} КБ."
+if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then MIN_KB=$((MIN_KB+600)); fi
+if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2>&1 || ! apk info -e luci-proto-amneziawg >/dev/null 2>&1; then
+    MIN_KB=$((MIN_KB+1600))
+fi
+[ "${FREE_KB:-0}" -ge "$MIN_KB" ] || fail "Слишком мало свободной flash: ${FREE_KB:-0} КБ. Для безопасной установки нужно минимум ${MIN_KB} КБ."
 
-say "EasyRoute v0.1.2: OpenWrt $VER, интерфейс $IFACE, свободно $((FREE_KB/1024)) МБ"
+say "EasyRoute v0.2.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
+
+# Устанавливаем поддержку AmneziaWG 3.1, но НЕ создаём VPN-подключение.
+if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2>&1 || ! apk info -e luci-proto-amneziawg >/dev/null 2>&1; then
+    say 'Устанавливаю поддержку AmneziaWG 3.1...'
+    AWG_SCRIPT='/tmp/easyroute-amneziawg-install.sh'
+    wget -qO "$AWG_SCRIPT" "$AWG_INSTALL_URL" || fail 'Не удалось скачать установщик AmneziaWG.'
+    [ -s "$AWG_SCRIPT" ] || fail 'Установщик AmneziaWG пустой.'
+    sh -n "$AWG_SCRIPT" || fail 'Ошибка синтаксиса установщика AmneziaWG.'
+    if ! printf 'y\n' | sh "$AWG_SCRIPT" -n; then
+        fail 'Не удалось установить AmneziaWG 3.1.'
+    fi
+    rm -f "$AWG_SCRIPT"
+else
+    say 'AmneziaWG уже установлен — пропускаю.'
+fi
+
+command -v awg >/dev/null 2>&1 || fail 'После установки не найдена команда awg.'
+awg --version 2>/dev/null | grep -q 'v3\.1' || fail "Ожидалась AmneziaWG 3.1, получено: $(awg --version 2>/dev/null || echo unknown)"
 
 if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then
     say 'Устанавливаю dnsmasq-full (нужен nftset)...'
@@ -47,6 +69,15 @@ fi
 
 dnsmasq --version 2>/dev/null | grep -q ' nftset ' || fail 'dnsmasq установлен без поддержки nftset.'
 
+# Если VPN уже настроен — используем его. На чистой системе оставляем имя AWG как безопасный placeholder.
+EXISTING="$(uci -q get easyroute.main.interface 2>/dev/null || true)"
+IFACE=''
+if [ -n "$EXISTING" ] && [ "$(uci -q get "network.$EXISTING.proto" 2>/dev/null || true)" = 'amneziawg' ]; then
+    IFACE="$EXISTING"
+fi
+[ -n "$IFACE" ] || IFACE="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
+[ -n "$IFACE" ] || IFACE="${EXISTING:-AWG}"
+
 rm -rf "$TMP"; mkdir -p "$TMP"
 FILES='files/usr/libexec/easyroute files/usr/libexec/rpcd/luci.easyroute files/etc/init.d/easyroute files/etc/hotplug.d/iface/95-easyroute files/usr/share/luci/menu.d/luci-app-easyroute.json files/usr/share/rpcd/acl.d/luci-app-easyroute.json files/www/luci-static/resources/view/easyroute/routes.js'
 for f in $FILES; do
@@ -55,10 +86,13 @@ for f in $FILES; do
     [ -s "$TMP/$f" ] || fail "Пустой файл $f"
 done
 
+# Локальные проверки до копирования в систему.
 sh -n "$TMP/files/usr/libexec/easyroute" || fail 'Ошибка синтаксиса easyroute.'
 sh -n "$TMP/files/usr/libexec/rpcd/luci.easyroute" || fail 'Ошибка синтаксиса RPC.'
 sh -n "$TMP/files/etc/init.d/easyroute" || fail 'Ошибка синтаксиса init.'
 sh -n "$TMP/files/etc/hotplug.d/iface/95-easyroute" || fail 'Ошибка синтаксиса hotplug.'
+grep -q '"admin/network/easyroute"' "$TMP/files/usr/share/luci/menu.d/luci-app-easyroute.json" || fail 'Повреждён файл меню LuCI.'
+grep -q '"luci-app-easyroute"' "$TMP/files/usr/share/rpcd/acl.d/luci-app-easyroute.json" || fail 'Повреждён ACL.'
 
 mkdir -p /etc/easyroute/lists "$BACKUP"
 if [ ! -f "$BACKUP/.created" ]; then
@@ -90,7 +124,8 @@ fi
 
 /etc/init.d/easyroute enable
 /etc/init.d/rpcd restart >/dev/null 2>&1 || true
-rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
+rm -f /tmp/luci-indexcache 2>/dev/null || true
+rm -f /tmp/luci-modulecache/* 2>/dev/null || true
 
 if ! out="$(/usr/libexec/easyroute apply 2>&1)"; then
     printf '%s\n' "$out" >&2
@@ -99,9 +134,24 @@ fi
 
 FREE2="$(df -k /overlay 2>/dev/null | awk 'NR==2{print $4}')"
 [ -n "$FREE2" ] || FREE2="$(df -k / 2>/dev/null | awk 'NR==2{print $4}')"
+
+DETECTED="$(uci show network 2>/dev/null | sed -n "s/^network\.\([^.=]*\)\.proto='amneziawg'$/\1/p" | head -n1)"
+
 say ''
 say 'ГОТОВО.'
-say "Откройте LuCI: Сеть -> Маршруты VPN"
-say "AWG: $IFACE"
+say 'Установлено:'
+say '  ✓ AmneziaWG 3.1'
+say '  ✓ LuCI-протокол AmneziaWG'
+say '  ✓ dnsmasq-full + nftset'
+say '  ✓ EasyRoute'
 say "Свободно во flash: $((FREE2/1024)) МБ"
-say 'Добавьте список вручную или загрузите TXT и нажмите «Сохранить и применить».'
+say ''
+if [ -n "$DETECTED" ]; then
+    say "Найдено AWG-подключение: $DETECTED"
+    say 'Откройте LuCI: Сеть -> Маршруты VPN и добавляйте списки.'
+else
+    say 'Остался только один шаг: создать/импортировать ваше AWG 3.1 подключение в LuCI.'
+    say 'LuCI -> Сеть -> Интерфейсы -> Добавить новый интерфейс -> AmneziaWG VPN.'
+    say 'После поднятия AWG EasyRoute подхватит интерфейс автоматически.'
+    say 'Затем: Сеть -> Маршруты VPN -> Добавить список/TXT.'
+fi
