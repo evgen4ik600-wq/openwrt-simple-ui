@@ -1,0 +1,166 @@
+#!/bin/sh
+
+. /usr/share/libubox/jshn.sh
+
+BASE='/etc/easyroute'
+LISTDIR="$BASE/lists"
+MAX_BYTES=262144
+RESERVE_KB=1024
+
+reply() {
+    json_init
+    json_add_boolean ok "$1"
+    [ -n "${2:-}" ] && json_add_string message "$2"
+    json_dump
+}
+
+valid_id() { printf '%s' "$1" | grep -Eq '^r[0-9A-Za-z_-]+$'; }
+
+rule_ids() {
+    uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=rule$/\1/p"
+}
+
+status() {
+    iface="$(uci -q get easyroute.main.interface 2>/dev/null || echo AWG)"
+    out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    up="$(printf '%s' "$out" | jsonfilter -e '@.up' 2>/dev/null || echo false)"
+    ip4="$(printf '%s' "$out" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    hs=''
+    if command -v awg >/dev/null 2>&1; then
+        ts="$(awg show "$iface" latest-handshakes 2>/dev/null | awk 'NR==1{print $2}')"
+        case "$ts" in ''|0) : ;; *) now="$(date +%s)"; hs="$((now-ts))" ;; esac
+    fi
+    total=0; active=0
+    for id in $(rule_ids); do
+        total=$((total+1))
+        [ "$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)" = '1' ] && active=$((active+1))
+    done
+    free_kb="$(df -k /overlay 2>/dev/null | awk 'NR==2{print $4}')"
+    [ -n "$free_kb" ] || free_kb="$(df -k / 2>/dev/null | awk 'NR==2{print $4}')"
+    json_init
+    json_add_boolean ok 1
+    json_add_string interface "$iface"
+    json_add_boolean vpn_up "$up"
+    json_add_string vpn_ip "$ip4"
+    json_add_string handshake_age "$hs"
+    json_add_int rules "$total"
+    json_add_int active "$active"
+    json_add_string domain_count "$(cat /tmp/easyroute/domain_count 2>/dev/null || echo 0)"
+    json_add_string ip_count "$(cat /tmp/easyroute/ip_count 2>/dev/null || echo 0)"
+    json_add_string unsupported_count "$(cat /tmp/easyroute/unsupported_count 2>/dev/null || echo 0)"
+    json_add_string invalid_count "$(cat /tmp/easyroute/invalid_count 2>/dev/null || echo 0)"
+    json_add_string last_apply "$(cat /tmp/easyroute/last_apply 2>/dev/null || echo '—')"
+    json_add_string overlay_free_kb "$free_kb"
+    json_dump
+}
+
+list_rules() {
+    json_init
+    json_add_boolean ok 1
+    json_add_array rules
+    for id in $(rule_ids); do
+        name="$(uci -q get "easyroute.$id.name" 2>/dev/null || echo "$id")"
+        enabled="$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)"
+        file="$LISTDIR/$id.txt"
+        count="$(awk 'BEGIN{n=0} {gsub(/\r/,""); s=$0; gsub(/^[ \t]+|[ \t]+$/, "", s); if(s!="" && s !~ /^#/)n++} END{print n}' "$file" 2>/dev/null || echo 0)"
+        json_add_object ''
+        json_add_string id "$id"
+        json_add_string name "$name"
+        json_add_boolean enabled "$enabled"
+        json_add_int count "${count:-0}"
+        json_close_object
+    done
+    json_close_array
+    json_dump
+}
+
+get_rule() {
+    json_load "$1"
+    json_get_var id id
+    valid_id "$id" || { reply 0 'Некорректный ID'; return; }
+    [ "$(uci -q get "easyroute.$id" 2>/dev/null || true)" = 'rule' ] || { reply 0 'Список не найден'; return; }
+    json_init
+    json_add_boolean ok 1
+    json_add_string id "$id"
+    json_add_string name "$(uci -q get "easyroute.$id.name" 2>/dev/null || echo "$id")"
+    json_add_boolean enabled "$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)"
+    json_add_string content "$(cat "$LISTDIR/$id.txt" 2>/dev/null || true)"
+    json_dump
+}
+
+save_rule() {
+    json_load "$1"
+    json_get_var id id
+    json_get_var name name
+    json_get_var enabled enabled
+    json_get_var content content
+    name="$(printf '%s' "$name" | tr '\r\n' '  ' | cut -c1-80)"
+    [ -n "$name" ] || { reply 0 'Укажите название'; return; }
+    bytes="$(printf '%s' "$content" | wc -c | tr -d ' ')"
+    [ "$bytes" -le "$MAX_BYTES" ] || { reply 0 'TXT больше 256 КБ. Для этого роутера список слишком большой.'; return; }
+    if [ -z "$id" ]; then
+        id="r$(date +%s)$$"
+    fi
+    valid_id "$id" || { reply 0 'Некорректный ID'; return; }
+    case "$enabled" in 0|false) enabled=0 ;; *) enabled=1 ;; esac
+    oldbytes=0; [ -f "$LISTDIR/$id.txt" ] && oldbytes="$(wc -c < "$LISTDIR/$id.txt" | tr -d ' ')"
+    delta=$((bytes-oldbytes)); [ "$delta" -lt 0 ] && delta=0
+    need_kb=$(((delta+1023)/1024))
+    free_kb="$(df -k /overlay 2>/dev/null | awk 'NR==2{print $4}')"; [ -n "$free_kb" ] || free_kb="$(df -k / 2>/dev/null | awk 'NR==2{print $4}')"
+    [ $((free_kb-need_kb)) -ge "$RESERVE_KB" ] || { reply 0 'Недостаточно flash. EasyRoute оставляет минимум 1 МБ свободным.'; return; }
+    mkdir -p "$LISTDIR"
+    tmp="$LISTDIR/.$id.tmp.$$"
+    printf '%s\n' "$content" | tr -d '\r' > "$tmp"
+    mv "$tmp" "$LISTDIR/$id.txt"
+    uci -q delete "easyroute.$id" 2>/dev/null || true
+    uci set "easyroute.$id=rule"
+    uci set "easyroute.$id.name=$name"
+    uci set "easyroute.$id.enabled=$enabled"
+    uci commit easyroute
+    if out="$(/usr/libexec/easyroute apply 2>&1)"; then
+        reply 1 'Сохранено и применено'
+    else
+        reply 0 "Список сохранён, но не применён: $out"
+    fi
+}
+
+delete_rule() {
+    json_load "$1"; json_get_var id id
+    valid_id "$id" || { reply 0 'Некорректный ID'; return; }
+    uci -q delete "easyroute.$id" 2>/dev/null || true
+    uci commit easyroute
+    rm -f "$LISTDIR/$id.txt"
+    if out="$(/usr/libexec/easyroute apply 2>&1)"; then reply 1 'Удалено'; else reply 0 "Удалено, но применение завершилось ошибкой: $out"; fi
+}
+
+case "${1:-}" in
+    list)
+        json_init
+        json_add_object status; json_close_object
+        json_add_object list_rules; json_close_object
+        json_add_object get_rule; json_add_string id String; json_close_object
+        json_add_object save_rule
+            json_add_string id String
+            json_add_string name String
+            json_add_boolean enabled Boolean
+            json_add_string content String
+        json_close_object
+        json_add_object delete_rule; json_add_string id String; json_close_object
+        json_add_object apply; json_close_object
+        json_dump
+        ;;
+    call)
+        method="${2:-}"; payload="$(cat)"
+        case "$method" in
+            status) status ;;
+            list_rules) list_rules ;;
+            get_rule) get_rule "$payload" ;;
+            save_rule) save_rule "$payload" ;;
+            delete_rule) delete_rule "$payload" ;;
+            apply)
+                if out="$(/usr/libexec/easyroute apply 2>&1)"; then reply 1 'Маршруты применены'; else reply 0 "$out"; fi
+                ;;
+            *) reply 0 'Неизвестная команда' ;;
+        esac
+        ;;
+esac
