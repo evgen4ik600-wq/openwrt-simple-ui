@@ -11,9 +11,9 @@ var callDelete = rpc.declare({ object: 'luci.easyroute', method: 'delete_rule', 
 var callApply = rpc.declare({ object: 'luci.easyroute', method: 'apply', expect: { '': {} } });
 
 function vpnText(s) {
-    if (!s.vpn_up) return 'не подключён';
     if (s.handshake_age) return 'подключён, handshake ' + s.handshake_age + ' сек. назад';
-    return 'подключён';
+    if (s.vpn_up) return 'подключён';
+    return 'не подключён';
 }
 
 function notify(r) {
