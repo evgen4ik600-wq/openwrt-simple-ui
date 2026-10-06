@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO_BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main/easyroute'
+REPO_BASE='https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/easyroute-stable/easyroute'
 AWG_INSTALL_URL='https://raw.githubusercontent.com/Slava-Shchipunov/awg-openwrt/03b62269e2edc168504f057cffaafda11b25ed92/amneziawg-install.sh'
 TMP='/tmp/easyroute-install'
 BACKUP='/etc/easyroute/backup'
