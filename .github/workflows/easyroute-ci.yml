@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'easyroute/**'
+      - 'clientnames/**'
       - 'openwrt-easyroute-install.sh'
       - '.github/workflows/easyroute-ci.yml'
   workflow_dispatch:
@@ -24,15 +25,20 @@ jobs:
           dash -n easyroute/files/usr/libexec/rpcd/luci.easyroute
           dash -n easyroute/files/etc/init.d/easyroute
           dash -n easyroute/files/etc/hotplug.d/iface/95-easyroute
+          dash -n clientnames/install.sh
+          dash -n clientnames/uninstall.sh
+          dash -n clientnames/files/usr/libexec/rpcd/luci.clientnames
 
       - name: JSON syntax
         run: |
           python3 -m json.tool easyroute/files/usr/share/luci/menu.d/luci-app-easyroute.json >/dev/null
           python3 -m json.tool easyroute/files/usr/share/rpcd/acl.d/luci-app-easyroute.json >/dev/null
+          python3 -m json.tool clientnames/files/usr/share/rpcd/acl.d/luci-clientnames.json >/dev/null
 
       - name: LuCI JavaScript syntax
         run: |
           node -e "new Function(require('fs').readFileSync('easyroute/files/www/luci-static/resources/view/easyroute/routes.js','utf8'))"
+          node -e "new Function(require('fs').readFileSync('clientnames/files/www/luci-static/resources/view/status/include/61_clientnames.js','utf8'))"
 
       - name: Installer references
         run: |
@@ -55,6 +61,28 @@ jobs:
               "dnsmasq nftset": 'nftset=/' in engine,
               "engine awg detection": 'amneziawg' in engine,
               "hotplug awg detection": 'amneziawg' in hotplug,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          for name, ok in checks.items():
+              print(f"{name}: {'OK' if ok else 'FAIL'}")
+          if failed:
+              raise SystemExit("Failed: " + ", ".join(failed))
+          PY
+
+      - name: Client Names invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          js = Path('clientnames/files/www/luci-static/resources/view/status/include/61_clientnames.js').read_text()
+          rpc = Path('clientnames/files/usr/libexec/rpcd/luci.clientnames').read_text()
+          ins = Path('clientnames/install.sh').read_text()
+          checks = {
+              "does not replace stock wifi file": '/60_wifi.js' not in ins,
+              "enhances stock table": 'wifi_assoclist_table' in js,
+              "rename control": 'Переименовать устройство' in js,
+              "rpc list": "method: 'list'" in js,
+              "rpc set": "method: 'set'" in js,
+              "stores UCI config": "CFG='clientnames'" in rpc,
           }
           failed = [name for name, ok in checks.items() if not ok]
           for name, ok in checks.items():
