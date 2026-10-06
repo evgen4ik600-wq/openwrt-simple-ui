@@ -37,17 +37,17 @@ jobs:
       - name: Installer references
         run: |
           set -eu
-          grep -q '03b62269e2edc168504f057cffaafda11b25ed92' easyroute/install.sh
-          grep -q "v3\\.1" easyroute/install.sh
-          grep -q "dnsmasq-full" easyroute/install.sh
-          grep -q "files/usr/libexec/easyroute" easyroute/install.sh
-          grep -q "files/www/luci-static/resources/view/easyroute/routes.js" easyroute/install.sh
+          grep -Fq '03b62269e2edc168504f057cffaafda11b25ed92' easyroute/install.sh
+          grep -Fq "v3\\.1" easyroute/install.sh
+          grep -Fq "dnsmasq-full" easyroute/install.sh
+          grep -Fq "files/usr/libexec/easyroute" easyroute/install.sh
+          grep -Fq "files/www/luci-static/resources/view/easyroute/routes.js" easyroute/install.sh
 
       - name: EasyRoute invariants
         run: |
           set -eu
-          grep -q "MARK='0x66'" easyroute/files/usr/libexec/easyroute
-          grep -q "TABLE='166'" easyroute/files/usr/libexec/easyroute
-          grep -q "nftset=/" easyroute/files/usr/libexec/easyroute
-          grep -q "proto='amneziawg'" easyroute/files/usr/libexec/easyroute
-          grep -q "proto='amneziawg'" easyroute/files/etc/hotplug.d/iface/95-easyroute
+          grep -Fq "MARK='0x66'" easyroute/files/usr/libexec/easyroute
+          grep -Fq "TABLE='166'" easyroute/files/usr/libexec/easyroute
+          grep -Fq "nftset=/" easyroute/files/usr/libexec/easyroute
+          grep -Fq "proto='amneziawg'" easyroute/files/usr/libexec/easyroute
+          grep -Fq "proto='amneziawg'" easyroute/files/etc/hotplug.d/iface/95-easyroute
