@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+START=96
+STOP=10
+USE_PROCD=0
+
+start() {
+    /usr/libexec/easyroute apply >/tmp/easyroute-boot.log 2>&1 || true
+}
+
+stop() {
+    /usr/libexec/easyroute route-down >/dev/null 2>&1 || true
+}
+
+restart() {
+    stop
+    start
+}
