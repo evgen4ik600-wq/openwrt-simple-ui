@@ -11,8 +11,10 @@ var callDelete = rpc.declare({ object: 'luci.easyroute', method: 'delete_rule', 
 var callApply = rpc.declare({ object: 'luci.easyroute', method: 'apply', expect: { '': {} } });
 
 function vpnText(s) {
+    if (!s.awg_installed) return 'компонент AmneziaWG не установлен';
+    if (!s.awg_configured) return 'AmneziaWG установлен, подключение ещё не добавлено';
     if (s.handshake_age) return 'подключён, handshake ' + s.handshake_age + ' сек. назад';
-    if (s.vpn_up) return 'подключён';
+    if (s.vpn_up) return 'интерфейс поднят, ждём handshake';
     return 'не подключён';
 }
 
