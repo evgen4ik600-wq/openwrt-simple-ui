@@ -167,8 +167,10 @@ save_rule() {
     case "$update_interval" in ''|*[!0-9]*) update_interval=86400 ;; esac
     [ "$update_interval" -ge 3600 ] 2>/dev/null || update_interval=3600
 
+    is_new=0
     if [ -z "$id" ]; then
-        id="r$(date +%s)$$"
+        is_new=1
+        id="r$(date +%s)$"
     fi
     valid_id "$id" || { reply 0 'Некорректный ID'; return; }
 
@@ -192,7 +194,14 @@ save_rule() {
         if out="$(/usr/libexec/easyroute-url-update one "$id" 2>&1)"; then
             reply 1 "URL сохранён и обновлён: $out"
         else
-            reply 0 "URL сохранён, но обновить список не удалось. Старый список, если был, сохранён: $out"
+            if [ "$is_new" = '1' ]; then
+                uci -q delete "easyroute.$id" 2>/dev/null || true
+                uci commit easyroute
+                rm -f "$LISTDIR/$id.txt" "$RUNDIR/$id.last" "$RUNDIR/$id.state" "$RUNDIR/$id.message"
+                reply 0 "Не удалось добавить URL-список: $out"
+            else
+                reply 0 "URL сохранён, но обновить список не удалось. Старый список сохранён: $out"
+            fi
         fi
         return
     fi
