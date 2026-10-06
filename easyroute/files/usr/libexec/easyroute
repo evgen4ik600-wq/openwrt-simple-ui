@@ -1,0 +1,307 @@
+#!/bin/sh
+
+set -u
+
+BASE='/etc/easyroute'
+LISTDIR="$BASE/lists"
+CFG='/etc/config/easyroute'
+DNSMASQ_CONF='/etc/dnsmasq.conf'
+SET_FILE='/usr/share/nftables.d/table-pre/90-easyroute-sets.nft'
+MARK_FILE='/usr/share/nftables.d/chain-pre/mangle_prerouting/90-easyroute-mark.nft'
+FWD_FILE='/usr/share/nftables.d/chain-pre/forward/90-easyroute-forward.nft'
+NAT_FILE='/usr/share/nftables.d/table-post/90-easyroute-nat.nft'
+MARK='0x66'
+TABLE='166'
+RULE_PRIO='1066'
+
+log() { logger -t easyroute "$*" 2>/dev/null || true; }
+
+get_iface() {
+    uci -q get easyroute.main.interface 2>/dev/null || echo 'AWG'
+}
+
+get_dev() {
+    local iface="$1" out dev
+    out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    dev="$(printf '%s' "$out" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"
+    [ -n "$dev" ] || dev="$(printf '%s' "$out" | jsonfilter -e '@.device' 2>/dev/null || true)"
+    [ -n "$dev" ] || dev="$iface"
+    printf '%s\n' "$dev"
+}
+
+iface_up() {
+    local iface="$1" out up
+    out="$(ubus call "network.interface.$iface" status 2>/dev/null || true)"
+    up="$(printf '%s' "$out" | jsonfilter -e '@.up' 2>/dev/null || true)"
+    [ "$up" = 'true' ]
+}
+
+route_down() {
+    while ip rule del priority "$RULE_PRIO" 2>/dev/null; do :; done
+    while ip -6 rule del priority "$RULE_PRIO" 2>/dev/null; do :; done
+    ip route flush table "$TABLE" 2>/dev/null || true
+    ip -6 route flush table "$TABLE" 2>/dev/null || true
+}
+
+route_up() {
+    local iface dev
+    iface="$(get_iface)"
+    iface_up "$iface" || { route_down; return 0; }
+    dev="$(get_dev "$iface")"
+
+    route_down
+    ip route replace default dev "$dev" table "$TABLE" 2>/dev/null || return 1
+    ip rule add priority "$RULE_PRIO" fwmark "$MARK/0xff" lookup "$TABLE" 2>/dev/null || return 1
+
+    if ip -6 addr show dev "$dev" 2>/dev/null | grep -q 'inet6 '; then
+        ip -6 route replace default dev "$dev" table "$TABLE" 2>/dev/null || true
+        ip -6 rule add priority "$RULE_PRIO" fwmark "$MARK/0xff" lookup "$TABLE" 2>/dev/null || true
+    fi
+    return 0
+}
+
+list_rule_ids() {
+    uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=rule$/\1/p"
+}
+
+parse_all() {
+    local out="$1" id enabled file
+    : > "$out"
+    for id in $(list_rule_ids); do
+        enabled="$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)"
+        [ "$enabled" = '1' ] || continue
+        file="$LISTDIR/$id.txt"
+        [ -s "$file" ] || continue
+        awk '
+        function trim(s){gsub(/^[ \t]+|[ \t]+$/, "", s); return s}
+        function octok(x){return (x ~ /^[0-9]+$/ && x+0>=0 && x+0<=255)}
+        function ipv4ok(s, a,n,i){n=split(s,a,"."); if(n!=4)return 0; for(i=1;i<=4;i++)if(!octok(a[i]))return 0; return 1}
+        function maskbits(m, a,n,i,b,seenpartial,v){
+          n=split(m,a,"."); if(n!=4)return -1; b=0; seenpartial=0;
+          for(i=1;i<=4;i++){
+            v=a[i]+0;
+            if(seenpartial && v!=0)return -1;
+            if(v==255)b+=8;
+            else if(v==254){b+=7;seenpartial=1}
+            else if(v==252){b+=6;seenpartial=1}
+            else if(v==248){b+=5;seenpartial=1}
+            else if(v==240){b+=4;seenpartial=1}
+            else if(v==224){b+=3;seenpartial=1}
+            else if(v==192){b+=2;seenpartial=1}
+            else if(v==128){b+=1;seenpartial=1}
+            else if(v==0){seenpartial=1}
+            else return -1;
+          }
+          return b
+        }
+        {
+          gsub(/\r/, "", $0); line=trim($0);
+          if(line=="" || line ~ /^#/) next;
+          sub(/[ \t]+#.*/, "", line); line=trim(line); if(line=="")next;
+
+          if(line ~ /^route[ \t]+add[ \t]+/){
+            n=split(line,a,/[ \t]+/);
+            if(n>=6 && a[1]=="route" && a[2]=="add" && a[4]=="mask" && ipv4ok(a[3])){
+              p=maskbits(a[5]); if(p>=0){print "4\t" a[3] "/" p; next}
+            }
+            print "X\t" line; next;
+          }
+
+          if(line ~ /^domain:/) sub(/^domain:/,"",line);
+          else if(line ~ /^full:/) sub(/^full:/,"",line);
+          else if(line ~ /^(keyword|regexp|include):/){print "U\t" line; next}
+
+          raw=line; n=split(line,a,/[ \t]+/);
+          if(n>1 && a[2] !~ /^@/){print "X\t" raw; next}
+          line=a[1]; line=trim(line);
+          if(line=="")next;
+
+          if(index(line,"/")>0 && line !~ /:/){
+            n=split(line,b,"/");
+            if(n==2 && ipv4ok(b[1]) && b[2] ~ /^[0-9]+$/ && b[2]+0<=32){print "4\t" line; next}
+          }
+          if(ipv4ok(line)){print "4\t" line; next}
+          if(index(line,":")>0){print "6\t" line; next}
+          if(line ~ /^[A-Za-z0-9_.-]+$/ && line !~ /^\./ && line !~ /\.\./){print "D\t" tolower(line); next}
+          print "X\t" line
+        }' "$file" >> "$out"
+    done
+}
+
+join_elements() {
+    local file="$1" first=1 v
+    while IFS= read -r v; do
+        [ -n "$v" ] || continue
+        if [ "$first" -eq 1 ]; then
+            printf '%s' "$v"
+            first=0
+        else
+            printf ', %s' "$v"
+        fi
+    done < "$file"
+}
+
+generate_files() {
+    local tmp="$1" iface dev parsed domains ip4 ip6 unsupported invalid
+    iface="$(get_iface)"; dev="$(get_dev "$iface")"
+    parsed="$tmp/parsed"; domains="$tmp/domains"; ip4="$tmp/ip4"; ip6="$tmp/ip6"
+    unsupported="$tmp/unsupported"; invalid="$tmp/invalid"
+    parse_all "$parsed"
+    awk -F '\t' '$1=="D"{print $2}' "$parsed" | sort -u > "$domains"
+    awk -F '\t' '$1=="4"{print $2}' "$parsed" | sort -u > "$ip4"
+    awk -F '\t' '$1=="6"{print $2}' "$parsed" | sort -u > "$ip6"
+    awk -F '\t' '$1=="U"{print $2}' "$parsed" > "$unsupported"
+    awk -F '\t' '$1=="X"{print $2}' "$parsed" > "$invalid"
+
+    {
+        echo 'set easyroute4 {'
+        echo '    type ipv4_addr'
+        echo '    flags interval'
+        echo '    auto-merge'
+        if [ -s "$ip4" ]; then
+            printf '    elements = { '
+            join_elements "$ip4"
+            echo ' }'
+        fi
+        echo '}'
+        echo
+        echo 'set easyroute6 {'
+        echo '    type ipv6_addr'
+        echo '    flags interval'
+        echo '    auto-merge'
+        if [ -s "$ip6" ]; then
+            printf '    elements = { '
+            join_elements "$ip6"
+            echo ' }'
+        fi
+        echo '}'
+    } > "$tmp/sets.nft"
+
+    {
+        echo 'ip daddr @easyroute4 meta mark set 0x66'
+        echo 'ip6 daddr @easyroute6 meta mark set 0x66'
+    } > "$tmp/mark.nft"
+
+    printf 'meta mark 0x66 oifname "%s" accept\n' "$dev" > "$tmp/forward.nft"
+
+    cat > "$tmp/nat.nft" <<EOF2
+chain easyroute_srcnat {
+    type nat hook postrouting priority 101; policy accept;
+    meta mark 0x66 oifname "$dev" masquerade
+}
+EOF2
+
+    awk '
+      BEGIN{skip=0}
+      /^# EASYROUTE-BEGIN$/ {skip=1; next}
+      /^# EASYROUTE-END$/ {skip=0; next}
+      skip==0 {print}
+    ' "$DNSMASQ_CONF" > "$tmp/dnsmasq.conf"
+    {
+        echo '# EASYROUTE-BEGIN'
+        echo '# Generated by EasyRoute. Do not edit this block.'
+        if [ -s "$domains" ]; then
+            awk '
+              BEGIN{line=""; n=0}
+              {
+                if(n==0) line="nftset=/" $0;
+                else line=line "/" $0;
+                n++;
+                if(n>=40){print line "/4#inet#fw4#easyroute4,6#inet#fw4#easyroute6"; line=""; n=0}
+              }
+              END{if(n>0)print line "/4#inet#fw4#easyroute4,6#inet#fw4#easyroute6"}
+            ' "$domains"
+        fi
+        echo '# EASYROUTE-END'
+    } >> "$tmp/dnsmasq.conf"
+
+    printf '%s\n' "$(wc -l < "$domains" | tr -d ' ')" > "$tmp/domain_count"
+    printf '%s\n' "$(( $(wc -l < "$ip4") + $(wc -l < "$ip6") ))" > "$tmp/ip_count"
+    printf '%s\n' "$(wc -l < "$unsupported" | tr -d ' ')" > "$tmp/unsupported_count"
+    printf '%s\n' "$(wc -l < "$invalid" | tr -d ' ')" > "$tmp/invalid_count"
+}
+
+install_generated() {
+    local tmp="$1" rollback="$tmp/rollback" f rel
+    mkdir -p "$rollback"
+    for f in "$SET_FILE" "$MARK_FILE" "$FWD_FILE" "$NAT_FILE" "$DNSMASQ_CONF"; do
+        rel="$(printf '%s' "$f" | sed 's#/#_#g')"
+        if [ -e "$f" ]; then cp -p "$f" "$rollback/$rel"; else : > "$rollback/$rel.absent"; fi
+    done
+
+    mkdir -p "$(dirname "$SET_FILE")" "$(dirname "$MARK_FILE")" "$(dirname "$FWD_FILE")" "$(dirname "$NAT_FILE")"
+    cp "$tmp/sets.nft" "$SET_FILE"
+    cp "$tmp/mark.nft" "$MARK_FILE"
+    cp "$tmp/forward.nft" "$FWD_FILE"
+    cp "$tmp/nat.nft" "$NAT_FILE"
+    cp "$tmp/dnsmasq.conf" "$DNSMASQ_CONF"
+
+    if ! fw4 -q check >/dev/null 2>&1; then
+        rollback_generated "$rollback"
+        echo 'Ошибка проверки nftables. Изменения отменены.' >&2
+        return 1
+    fi
+
+    if ! dnsmasq --test --conf-file="$DNSMASQ_CONF" >/dev/null 2>&1; then
+        rollback_generated "$rollback"
+        echo 'Ошибка проверки dnsmasq. Изменения отменены.' >&2
+        return 1
+    fi
+
+    if ! fw4 reload >/dev/null 2>&1; then
+        rollback_generated "$rollback"
+        fw4 reload >/dev/null 2>&1 || true
+        echo 'Не удалось применить firewall. Изменения отменены.' >&2
+        return 1
+    fi
+
+    route_up || true
+
+    if ! /etc/init.d/dnsmasq restart >/dev/null 2>&1 || ! pidof dnsmasq >/dev/null 2>&1; then
+        rollback_generated "$rollback"
+        fw4 reload >/dev/null 2>&1 || true
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+        route_up || true
+        echo 'dnsmasq не запустился. Изменения отменены.' >&2
+        return 1
+    fi
+    return 0
+}
+
+rollback_generated() {
+    local rollback="$1" f rel
+    for f in "$SET_FILE" "$MARK_FILE" "$FWD_FILE" "$NAT_FILE" "$DNSMASQ_CONF"; do
+        rel="$(printf '%s' "$f" | sed 's#/#_#g')"
+        if [ -e "$rollback/$rel.absent" ]; then
+            rm -f "$f"
+        elif [ -e "$rollback/$rel" ]; then
+            cp -p "$rollback/$rel" "$f"
+        fi
+    done
+}
+
+apply_all() {
+    local tmp="/tmp/easyroute.apply.$$" rc=0
+    mkdir -p "$tmp"
+    generate_files "$tmp" || { rm -rf "$tmp"; return 1; }
+    if install_generated "$tmp"; then
+        mkdir -p /tmp/easyroute
+        cp "$tmp/domain_count" /tmp/easyroute/domain_count
+        cp "$tmp/ip_count" /tmp/easyroute/ip_count
+        cp "$tmp/unsupported_count" /tmp/easyroute/unsupported_count
+        cp "$tmp/invalid_count" /tmp/easyroute/invalid_count
+        date '+%Y-%m-%d %H:%M:%S' > /tmp/easyroute/last_apply
+        rc=0
+    else
+        rc=1
+    fi
+    rm -rf "$tmp"
+    return "$rc"
+}
+
+case "${1:-}" in
+    apply) apply_all ;;
+    route) route_up ;;
+    route-down) route_down ;;
+    *) echo "Usage: $0 apply|route|route-down"; exit 2 ;;
+esac
