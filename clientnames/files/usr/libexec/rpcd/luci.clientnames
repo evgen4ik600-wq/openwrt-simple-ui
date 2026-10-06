@@ -1,0 +1,97 @@
+#!/bin/sh
+. /usr/share/libubox/jshn.sh
+
+CFG='clientnames'
+
+valid_mac() {
+    printf '%s' "$1" | grep -Eq '^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$'
+}
+
+section_for_mac() {
+    printf 'c%s' "$1" | tr -d ':' | tr 'A-F' 'a-f'
+}
+
+reply_error() {
+    json_init
+    json_add_boolean ok 0
+    json_add_string message "$1"
+    json_dump
+}
+
+list_aliases() {
+    json_init
+    json_add_boolean ok 1
+    json_add_object aliases
+
+    for sec in $(uci show "$CFG" 2>/dev/null | sed -n "s/^$CFG\.\([^.=]*\)=client$/\1/p"); do
+        mac="$(uci -q get "$CFG.$sec.mac" 2>/dev/null || true)"
+        name="$(uci -q get "$CFG.$sec.name" 2>/dev/null || true)"
+        valid_mac "$mac" || continue
+        [ -n "$name" ] || continue
+        mac="$(printf '%s' "$mac" | tr 'a-f' 'A-F')"
+        json_add_string "$mac" "$name"
+    done
+
+    json_close_object
+    json_dump
+}
+
+set_alias() {
+    json_load "$1"
+    json_get_var mac mac
+    json_get_var name name
+
+    valid_mac "$mac" || {
+        reply_error 'Некорректный MAC-адрес'
+        return
+    }
+
+    name="$(printf '%s' "$name" | tr '\r\n\t' '   ')"
+    bytes="$(printf '%s' "$name" | wc -c | tr -d ' ')"
+    [ "$bytes" -le 240 ] || {
+        reply_error 'Имя слишком длинное'
+        return
+    }
+
+    mac="$(printf '%s' "$mac" | tr 'a-f' 'A-F')"
+    sec="$(section_for_mac "$mac")"
+
+    if [ -z "$name" ]; then
+        uci -q delete "$CFG.$sec" 2>/dev/null || true
+    else
+        uci -q delete "$CFG.$sec" 2>/dev/null || true
+        uci set "$CFG.$sec=client"
+        uci set "$CFG.$sec.mac=$mac"
+        uci set "$CFG.$sec.name=$name"
+    fi
+
+    uci commit "$CFG"
+
+    json_init
+    json_add_boolean ok 1
+    json_add_string mac "$mac"
+    json_add_string name "$name"
+    json_dump
+}
+
+case "${1:-}" in
+    list)
+        json_init
+        json_add_object list
+        json_close_object
+        json_add_object set
+            json_add_string mac String
+            json_add_string name String
+        json_close_object
+        json_dump
+        ;;
+    call)
+        method="${2:-}"
+        payload="$(cat)"
+        case "$method" in
+            list) list_aliases ;;
+            set) set_alias "$payload" ;;
+            *) reply_error 'Неизвестная команда' ;;
+        esac
+        ;;
+esac
