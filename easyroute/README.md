@@ -21,7 +21,7 @@
 Подключитесь к роутеру по SSH и выполните одну команду:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main/openwrt-easyroute-install.sh | sh
+wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/easyroute-stable/openwrt-easyroute-install.sh | sh
 ```
 
 Установщик автоматически:
@@ -143,7 +143,7 @@ EasyRoute хранит только ваши списки и небольшой 
 Эту же команду можно выполнить повторно:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main/openwrt-easyroute-install.sh | sh
+wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/easyroute-stable/openwrt-easyroute-install.sh | sh
 ```
 
 Созданные списки EasyRoute сохраняются.
@@ -151,7 +151,7 @@ wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/mai
 ## Удаление
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/main/easyroute/uninstall.sh | sh
+wget -qO- https://raw.githubusercontent.com/evgen4ik600-wq/openwrt-simple-ui/easyroute-stable/easyroute/uninstall.sh | sh
 ```
 
 Удаление EasyRoute не удаляет пакеты AmneziaWG и не удаляет ваши VPN-ключи.
