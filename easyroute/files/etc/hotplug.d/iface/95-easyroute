@@ -1,6 +1,20 @@
 #!/bin/sh
-iface="$(uci -q get easyroute.main.interface 2>/dev/null || echo AWG)"
-[ "${INTERFACE:-}" = "$iface" ] || exit 0
+[ -n "${INTERFACE:-}" ] || exit 0
+
+configured="$(uci -q get easyroute.main.interface 2>/dev/null || echo AWG)"
+proto="$(uci -q get "network.$INTERFACE.proto" 2>/dev/null || true)"
+
+if [ "$proto" = 'amneziawg' ]; then
+    configured_proto="$(uci -q get "network.$configured.proto" 2>/dev/null || true)"
+    if [ "$configured_proto" != 'amneziawg' ]; then
+        uci set "easyroute.main.interface=$INTERFACE"
+        uci commit easyroute
+        configured="$INTERFACE"
+    fi
+fi
+
+[ "$INTERFACE" = "$configured" ] || [ "$proto" = 'amneziawg' ] || exit 0
+
 case "${ACTION:-}" in
     ifup|ifupdate) /usr/libexec/easyroute route >/dev/null 2>&1 || true ;;
     ifdown) /usr/libexec/easyroute route-down >/dev/null 2>&1 || true ;;
