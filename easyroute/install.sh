@@ -35,7 +35,7 @@ MIN_KB=700
 if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then MIN_KB=1200; fi
 [ "${FREE_KB:-0}" -ge "$MIN_KB" ] || fail "Слишком мало свободной flash: ${FREE_KB:-0} КБ. Нужно минимум ${MIN_KB} КБ."
 
-say "EasyRoute: OpenWrt $VER, интерфейс $IFACE, свободно $((FREE_KB/1024)) МБ"
+say "EasyRoute v0.1.2: OpenWrt $VER, интерфейс $IFACE, свободно $((FREE_KB/1024)) МБ"
 
 if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then
     say 'Устанавливаю dnsmasq-full (нужен nftset)...'
