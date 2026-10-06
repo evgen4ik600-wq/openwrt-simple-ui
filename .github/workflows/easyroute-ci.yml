@@ -22,6 +22,7 @@ jobs:
           dash -n easyroute/install.sh
           dash -n easyroute/uninstall.sh
           dash -n easyroute/files/usr/libexec/easyroute
+          dash -n easyroute/files/usr/libexec/easyroute-url-update
           dash -n easyroute/files/usr/libexec/rpcd/luci.easyroute
           dash -n easyroute/files/etc/init.d/easyroute
           dash -n easyroute/files/etc/hotplug.d/iface/95-easyroute
@@ -47,6 +48,8 @@ jobs:
           grep -Fq "v3\\.1" easyroute/install.sh
           grep -Fq "dnsmasq-full" easyroute/install.sh
           grep -Fq "files/usr/libexec/easyroute" easyroute/install.sh
+          grep -Fq "files/usr/libexec/easyroute-url-update" easyroute/install.sh
+          grep -Fq "EASYROUTE-URL-UPDATE-BEGIN" easyroute/install.sh
           grep -Fq "files/www/luci-static/resources/view/easyroute/routes.js" easyroute/install.sh
 
       - name: EasyRoute invariants
