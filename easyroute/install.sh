@@ -39,7 +39,7 @@ if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2
 fi
 [ "${FREE_KB:-0}" -ge "$MIN_KB" ] || fail "Слишком мало свободной flash: ${FREE_KB:-0} КБ. Для безопасной установки нужно минимум ${MIN_KB} КБ."
 
-say "EasyRoute v0.2.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
+say "EasyRoute v0.3.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
 
 # Устанавливаем поддержку AmneziaWG 3.1, но НЕ создаём VPN-подключение.
 if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2>&1 || ! apk info -e luci-proto-amneziawg >/dev/null 2>&1; then
@@ -79,7 +79,7 @@ fi
 [ -n "$IFACE" ] || IFACE="${EXISTING:-AWG}"
 
 rm -rf "$TMP"; mkdir -p "$TMP"
-FILES='files/usr/libexec/easyroute files/usr/libexec/rpcd/luci.easyroute files/etc/init.d/easyroute files/etc/hotplug.d/iface/95-easyroute files/usr/share/luci/menu.d/luci-app-easyroute.json files/usr/share/rpcd/acl.d/luci-app-easyroute.json files/www/luci-static/resources/view/easyroute/routes.js'
+FILES='files/usr/libexec/easyroute files/usr/libexec/easyroute-url-update files/usr/libexec/rpcd/luci.easyroute files/etc/init.d/easyroute files/etc/hotplug.d/iface/95-easyroute files/usr/share/luci/menu.d/luci-app-easyroute.json files/usr/share/rpcd/acl.d/luci-app-easyroute.json files/www/luci-static/resources/view/easyroute/routes.js'
 for f in $FILES; do
     mkdir -p "$TMP/$(dirname "$f")"
     wget -qO "$TMP/$f" "$REPO_BASE/$f" || fail "Не удалось скачать $f"
@@ -88,6 +88,7 @@ done
 
 # Локальные проверки до копирования в систему.
 sh -n "$TMP/files/usr/libexec/easyroute" || fail 'Ошибка синтаксиса easyroute.'
+sh -n "$TMP/files/usr/libexec/easyroute-url-update" || fail 'Ошибка синтаксиса URL updater.'
 sh -n "$TMP/files/usr/libexec/rpcd/luci.easyroute" || fail 'Ошибка синтаксиса RPC.'
 sh -n "$TMP/files/etc/init.d/easyroute" || fail 'Ошибка синтаксиса init.'
 sh -n "$TMP/files/etc/hotplug.d/iface/95-easyroute" || fail 'Ошибка синтаксиса hotplug.'
@@ -108,7 +109,7 @@ for f in $FILES; do
     mkdir -p "$(dirname "$dst")"
     cp "$TMP/$f" "$dst"
 done
-chmod 0755 /usr/libexec/easyroute /usr/libexec/rpcd/luci.easyroute /etc/init.d/easyroute /etc/hotplug.d/iface/95-easyroute
+chmod 0755 /usr/libexec/easyroute /usr/libexec/easyroute-url-update /usr/libexec/rpcd/luci.easyroute /etc/init.d/easyroute /etc/hotplug.d/iface/95-easyroute
 
 if [ ! -f /etc/config/easyroute ]; then
     cat > /etc/config/easyroute <<EOF2
@@ -123,6 +124,27 @@ else
 fi
 
 /etc/init.d/easyroute enable
+
+# URL-списки: cron проверяет каждый час, а каждый список обновляется только
+# когда прошёл его update_interval (по умолчанию 86400 секунд = 24 часа).
+CRON='/etc/crontabs/root'
+mkdir -p /etc/crontabs
+touch "$CRON"
+awk '
+  $0=="# EASYROUTE-URL-UPDATE-BEGIN" {skip=1; next}
+  $0=="# EASYROUTE-URL-UPDATE-END" {skip=0; next}
+  skip!=1 {print}
+' "$CRON" > /tmp/easyroute-cron.$
+{
+    cat /tmp/easyroute-cron.$
+    echo '# EASYROUTE-URL-UPDATE-BEGIN'
+    echo '17 * * * * /usr/libexec/easyroute-url-update due >/tmp/easyroute-url-update.log 2>&1'
+    echo '# EASYROUTE-URL-UPDATE-END'
+} > "$CRON"
+rm -f /tmp/easyroute-cron.$
+/etc/init.d/cron enable >/dev/null 2>&1 || true
+/etc/init.d/cron restart >/dev/null 2>&1 || true
+
 /etc/init.d/rpcd restart >/dev/null 2>&1 || true
 rm -f /tmp/luci-indexcache 2>/dev/null || true
 rm -f /tmp/luci-modulecache/* 2>/dev/null || true
@@ -144,6 +166,7 @@ say '  ✓ AmneziaWG 3.1'
 say '  ✓ LuCI-протокол AmneziaWG'
 say '  ✓ dnsmasq-full + nftset'
 say '  ✓ EasyRoute'
+say '  ✓ URL-списки с автообновлением каждые 24 часа'
 say "Свободно во flash: $((FREE2/1024)) МБ"
 say ''
 if [ -n "$DETECTED" ]; then
