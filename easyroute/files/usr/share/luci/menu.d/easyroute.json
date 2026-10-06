@@ -1,0 +1,14 @@
+{
+  "admin/network/easyroute": {
+    "title": "Маршруты VPN",
+    "order": 65,
+    "action": {
+      "type": "view",
+      "path": "network/easyroute"
+    },
+    "depends": {
+      "acl": [ "luci-app-easyroute" ],
+      "uci": { "pbr": true }
+    }
+  }
+}

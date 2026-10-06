@@ -1,0 +1,26 @@
+{
+  "luci-app-easyroute": {
+    "description": "Grant access to EasyRoute policy management",
+    "read": {
+      "cgi-io": [ "exec" ],
+      "file": {
+        "/usr/bin/awg show *": [ "exec" ],
+        "/etc/init.d/pbr status": [ "exec" ]
+      },
+      "ubus": {
+        "file": [ "exec" ]
+      },
+      "uci": [ "pbr" ]
+    },
+    "write": {
+      "cgi-io": [ "exec" ],
+      "file": {
+        "/etc/init.d/pbr restart": [ "exec" ]
+      },
+      "ubus": {
+        "file": [ "exec" ]
+      },
+      "uci": [ "pbr" ]
+    }
+  }
+}
