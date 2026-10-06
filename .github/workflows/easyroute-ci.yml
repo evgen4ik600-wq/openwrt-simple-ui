@@ -77,7 +77,7 @@ jobs:
           rpc = Path('clientnames/files/usr/libexec/rpcd/luci.clientnames').read_text()
           ins = Path('clientnames/install.sh').read_text()
           checks = {
-              "does not replace stock wifi file": '/60_wifi.js' not in ins,
+              "does not replace stock wifi file": 'cp ' + '"$TMP/files/www/luci-static/resources/view/status/include/60_wifi.js"' not in ins,
               "enhances stock table": 'wifi_assoclist_table' in js,
               "rename control": 'Переименовать устройство' in js,
               "rpc list": "method: 'list'" in js,
