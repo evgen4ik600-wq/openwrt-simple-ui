@@ -47,7 +47,7 @@ status() {
     json_init
     json_add_boolean ok 1
     json_add_string interface "$iface"
-    json_add_boolean vpn_up "$up"
+    if [ "$up" = "true" ]; then json_add_boolean vpn_up 1; else json_add_boolean vpn_up 0; fi
     json_add_string vpn_ip "$ip4"
     json_add_string handshake_age "$hs"
     json_add_int rules "$total"
