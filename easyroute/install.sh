@@ -54,7 +54,7 @@ fi
 say "EasyRoute v1.0.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
 
 # Устанавливаем поддержку AmneziaWG 3.1, но НЕ создаём VPN-подключение.
-if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2>&1 || ! apk info -e luci-proto-amneziawg >/dev/null 2>&1; then
+if ! command -v awg >/dev/null 2>&1 || ! pkg_has kmod-amneziawg || ! pkg_has luci-proto-amneziawg; then
     say 'Устанавливаю поддержку AmneziaWG 3.1...'
     AWG_SCRIPT='/tmp/easyroute-amneziawg-install.sh'
     wget -qO "$AWG_SCRIPT" "$AWG_INSTALL_URL" || fail 'Не удалось скачать установщик AmneziaWG.'
