@@ -143,9 +143,11 @@ route_up() {
     done
 }
 parse_all() {
-    local out="$1" id enabled file
+    local out="$1" only="$2" id enabled file
+    [ -n "$only" ] || only=""
     : > "$out"
     for id in $(list_rule_ids); do
+        [ -z "$only" ] || [ "$id" = "$only" ] || continue
         enabled="$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)"
         [ "$enabled" = '1' ] || continue
         file="$LISTDIR/$id.txt"
@@ -262,7 +264,7 @@ generate_files() {
             [ "$(profile_for_rule "$rule")" = "$p" ] || continue
             [ -s "$LISTDIR/$rule.txt" ] || continue
             parsed="$tmp/$rule.$pnum.parsed"
-            parse_all "$parsed"
+            parse_all "$parsed" "$rule"
             awk -F '\t' '$1=="4"{print $2}' "$parsed" >> "$f4"
             awk -F '\t' '$1=="6"{print $2}' "$parsed" >> "$f6"
             awk -F '\t' '$1=="D"{print $2}' "$parsed" >> "$fd"
