@@ -3,12 +3,12 @@
     "description": "EasyRoute VPN routing",
     "read": {
       "ubus": {
-        "luci.easyroute": [ "status", "list_rules", "get_rule", "profiles", "devices", "test_route", "diagnostics", "settings" ]
+        "luci.easyroute": [ "status", "list_rules", "get_rule", "profiles", "devices", "discover_devices", "selftest", "test_route", "diagnostics", "settings" ]
       }
     },
     "write": {
       "ubus": {
-        "luci.easyroute": [ "save_rule", "delete_rule", "apply", "update_rule", "update_all", "save_profile", "delete_profile", "save_device", "delete_device", "save_settings" ]
+        "luci.easyroute": [ "save_rule", "delete_rule", "toggle_rule", "apply", "update_rule", "update_all", "save_profile", "delete_profile", "save_device", "delete_device", "save_settings" ]
       }
     }
   }
