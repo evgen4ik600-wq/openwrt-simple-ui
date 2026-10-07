@@ -1,24 +1,22 @@
 #!/bin/sh
 [ -n "${INTERFACE:-}" ] || exit 0
+[ -x /usr/libexec/easyroute ] || exit 0
 
-configured="$(uci -q get easyroute.main.interface 2>/dev/null || echo AWG)"
-proto="$(uci -q get "network.$INTERFACE.proto" 2>/dev/null || true)"
-
-if [ "$proto" = 'amneziawg' ]; then
-    configured_proto="$(uci -q get "network.$configured.proto" 2>/dev/null || true)"
-    if [ "$configured_proto" != 'amneziawg' ]; then
-        uci set "easyroute.main.interface=$INTERFACE"
-        uci commit easyroute
-        configured="$INTERFACE"
-    fi
+# EasyRoute never adopts or rewrites a VPN automatically.
+# React only to the explicitly selected main interface or configured VPN profiles.
+wanted=0
+configured="$(uci -q get easyroute.main.interface 2>/dev/null || true)"
+[ -n "$configured" ] && [ "$INTERFACE" = "$configured" ] && wanted=1
+if [ "$wanted" = 0 ]; then
+    for id in $(uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=vpn$/\1/p"); do
+        iface="$(uci -q get "easyroute.$id.interface" 2>/dev/null || true)"
+        [ "$INTERFACE" = "$iface" ] && { wanted=1; break; }
+    done
 fi
-
-[ "$INTERFACE" = "$configured" ] || [ "$proto" = 'amneziawg' ] || exit 0
+[ "$wanted" = 1 ] || exit 0
 
 case "${ACTION:-}" in
-    ifup|ifupdate) /usr/libexec/easyroute apply >/dev/null 2>&1 || true ;;
-    ifdown)
-        /usr/libexec/easyroute route-down >/dev/null 2>&1 || true
-        /usr/libexec/easyroute apply >/dev/null 2>&1 || true
+    ifup|ifupdate|ifdown)
+        /usr/libexec/easyroute apply >/tmp/easyroute-hotplug.log 2>&1 || true
         ;;
 esac
