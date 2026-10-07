@@ -16,6 +16,9 @@ fi
 [ "$INTERFACE" = "$configured" ] || [ "$proto" = 'amneziawg' ] || exit 0
 
 case "${ACTION:-}" in
-    ifup|ifupdate) /usr/libexec/easyroute route >/dev/null 2>&1 || true ;;
-    ifdown) /usr/libexec/easyroute route-down >/dev/null 2>&1 || true ;;
+    ifup|ifupdate) /usr/libexec/easyroute apply >/dev/null 2>&1 || true ;;
+    ifdown)
+        /usr/libexec/easyroute route-down >/dev/null 2>&1 || true
+        /usr/libexec/easyroute apply >/dev/null 2>&1 || true
+        ;;
 esac
