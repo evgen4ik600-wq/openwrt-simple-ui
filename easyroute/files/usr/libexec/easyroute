@@ -253,10 +253,6 @@ generate_files() {
         else
             set4="easyroute4p$pnum"; set6="easyroute6p$pnum"; setm="easyroute_macp$pnum"
         fi
-        echo "set $set4 { type ipv4_addr; flags interval; auto-merge; }" >> "$tmp/sets.nft"
-        echo "set $set6 { type ipv6_addr; flags interval; auto-merge; }" >> "$tmp/sets.nft"
-        echo "set $setm { type ether_addr; }" >> "$tmp/sets.nft"
-
         f4="$tmp/$set4"; f6="$tmp/$set6"; fd="$tmp/$set4.domains"; fm="$tmp/$setm"
         : > "$f4"; : > "$f6"; : > "$fd"; : > "$fm"
 
@@ -273,20 +269,25 @@ generate_files() {
             awk -F '\t' '$1=="X"{print $2}' "$parsed" >> "$tmp/all-invalid"
         done
 
-        sort -u "$f4" -o "$f4"
-        sort -u "$f6" -o "$f6"
-        sort -u "$fd" -o "$fd"
+        sort -u "$f4" > "$f4.sorted"; mv "$f4.sorted" "$f4"
+        sort -u "$f6" > "$f6.sorted"; mv "$f6.sorted" "$f6"
+        sort -u "$fd" > "$fd.sorted"; mv "$fd.sorted" "$fd"
 
+        printf 'set %s { type ipv4_addr; flags interval; auto-merge;' "$set4" >> "$tmp/sets.nft"
         if [ -s "$f4" ]; then
-            printf 'add element inet fw4 %s { ' "$set4" >> "$tmp/sets.nft"
+            printf ' elements = { ' >> "$tmp/sets.nft"
             join_elements "$f4" >> "$tmp/sets.nft"
-            echo ' }' >> "$tmp/sets.nft"
+            printf ' };' >> "$tmp/sets.nft"
         fi
+        echo ' }' >> "$tmp/sets.nft"
+
+        printf 'set %s { type ipv6_addr; flags interval; auto-merge;' "$set6" >> "$tmp/sets.nft"
         if [ -s "$f6" ]; then
-            printf 'add element inet fw4 %s { ' "$set6" >> "$tmp/sets.nft"
+            printf ' elements = { ' >> "$tmp/sets.nft"
             join_elements "$f6" >> "$tmp/sets.nft"
-            echo ' }' >> "$tmp/sets.nft"
+            printf ' };' >> "$tmp/sets.nft"
         fi
+        echo ' }' >> "$tmp/sets.nft"
 
         for id in $(device_ids); do
             [ "$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)" = '1' ] || continue
@@ -298,12 +299,14 @@ generate_files() {
             mac="$(uci -q get "easyroute.$id.mac" 2>/dev/null || true)"
             [ -n "$mac" ] && printf '%s\n' "$mac" >> "$fm"
         done
-        sort -u "$fm" -o "$fm"
+        sort -u "$fm" > "$fm.sorted"; mv "$fm.sorted" "$fm"
+        printf 'set %s { type ether_addr;' "$setm" >> "$tmp/sets.nft"
         if [ -s "$fm" ]; then
-            printf 'add element inet fw4 %s { ' "$setm" >> "$tmp/sets.nft"
+            printf ' elements = { ' >> "$tmp/sets.nft"
             join_elements "$fm" >> "$tmp/sets.nft"
-            echo ' }' >> "$tmp/sets.nft"
+            printf ' };' >> "$tmp/sets.nft"
         fi
+        echo ' }' >> "$tmp/sets.nft"
 
         if [ -s "$fd" ]; then
             awk -v s4="$set4" -v s6="$set6" '
