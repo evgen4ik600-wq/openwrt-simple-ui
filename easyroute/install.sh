@@ -14,11 +14,17 @@ fail() { printf 'ОШИБКА: %s\n' "$*" >&2; exit 1; }
 
 VER="$(. /etc/openwrt_release; printf '%s' "${DISTRIB_RELEASE:-unknown}")"
 case "$VER" in
-    25.12*) ;;
-    *) fail "Эта стабильная сборка проверена для OpenWrt 25.12.x. Сейчас: $VER" ;;
+    24.10*|25.12*) ;;
+    *) fail "Эта стабильная сборка проверена для OpenWrt 24.10.x и 25.12.x. Сейчас: $VER" ;;
 esac
 
-command -v apk >/dev/null 2>&1 || fail 'Не найден apk.'
+if command -v apk >/dev/null 2>&1; then
+    PKG='apk'
+elif command -v opkg >/dev/null 2>&1; then
+    PKG='opkg'
+else
+    fail 'Не найден менеджер пакетов apk/opkg.'
+fi
 command -v uci >/dev/null 2>&1 || fail 'Не найден uci.'
 command -v fw4 >/dev/null 2>&1 || fail 'Не найден firewall4.'
 command -v nft >/dev/null 2>&1 || fail 'Не найден nftables.'
@@ -34,12 +40,18 @@ FREE_KB="$(df -k /overlay 2>/dev/null | awk 'NR==2{print $4}')"
 [ -n "$FREE_KB" ] || FREE_KB="$(df -k / 2>/dev/null | awk 'NR==2{print $4}')"
 MIN_KB=700
 if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then MIN_KB=$((MIN_KB+600)); fi
-if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2>&1 || ! apk info -e luci-proto-amneziawg >/dev/null 2>&1; then
+pkg_has() {
+    case "$PKG" in
+        apk) apk info -e "$1" >/dev/null 2>&1 ;;
+        opkg) opkg status "$1" 2>/dev/null | grep -q '^Status: install' ;;
+    esac
+}
+if ! command -v awg >/dev/null 2>&1 || ! pkg_has kmod-amneziawg || ! pkg_has luci-proto-amneziawg; then
     MIN_KB=$((MIN_KB+1600))
 fi
 [ "${FREE_KB:-0}" -ge "$MIN_KB" ] || fail "Слишком мало свободной flash: ${FREE_KB:-0} КБ. Для безопасной установки нужно минимум ${MIN_KB} КБ."
 
-say "EasyRoute v0.3.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
+say "EasyRoute v1.0.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
 
 # Устанавливаем поддержку AmneziaWG 3.1, но НЕ создаём VPN-подключение.
 if ! command -v awg >/dev/null 2>&1 || ! apk info -e kmod-amneziawg >/dev/null 2>&1 || ! apk info -e luci-proto-amneziawg >/dev/null 2>&1; then
@@ -61,8 +73,12 @@ awg --version 2>/dev/null | grep -q 'v3\.1' || fail "Ожидалась AmneziaW
 
 if ! dnsmasq --version 2>/dev/null | grep -q ' nftset '; then
     say 'Устанавливаю dnsmasq-full (нужен nftset)...'
-    apk --update-cache add dnsmasq-full >/tmp/easyroute-apk.log 2>&1 || {
-        cat /tmp/easyroute-apk.log >&2 || true
+    if [ "$PKG" = 'apk' ]; then
+        apk -U add dnsmasq-full >/tmp/easyroute-pkg.log 2>&1
+    else
+        opkg update >/tmp/easyroute-pkg.log 2>&1 && opkg install dnsmasq-full >>/tmp/easyroute-pkg.log 2>&1
+    fi || {
+        cat /tmp/easyroute-pkg.log >&2 || true
         fail 'Не удалось установить dnsmasq-full.'
     }
 fi
