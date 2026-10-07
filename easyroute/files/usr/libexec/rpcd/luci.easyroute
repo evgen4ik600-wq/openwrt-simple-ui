@@ -184,7 +184,7 @@ save_rule() {
     is_new=0
     if [ -z "$id" ]; then
         is_new=1
-        id="r$(date +%s)$"
+        id="r$(date +%s)"
     fi
     valid_id "$id" || { reply 0 'Некорректный ID'; return; }
 
