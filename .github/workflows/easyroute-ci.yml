@@ -39,6 +39,7 @@ jobs:
       - name: LuCI JavaScript syntax
         run: |
           node -e "new Function(require('fs').readFileSync('easyroute/files/www/luci-static/resources/view/easyroute/routes.js','utf8'))"
+          node -e "new Function(require('fs').readFileSync('easyroute/files/www/luci-static/resources/view/easyroute/routes-v110.js','utf8'))"
           node -e "new Function(require('fs').readFileSync('clientnames/files/www/luci-static/resources/view/status/include/61_clientnames.js','utf8'))"
 
       - name: Installer references
@@ -51,6 +52,8 @@ jobs:
           grep -Fq "files/usr/libexec/easyroute-url-update" easyroute/install.sh
           grep -Fq "EASYROUTE-URL-UPDATE-BEGIN" easyroute/install.sh
           grep -Fq "files/www/luci-static/resources/view/easyroute/routes.js" easyroute/install.sh
+          grep -Fq "files/www/luci-static/resources/view/easyroute/routes-v110.js" easyroute/install.sh
+          grep -Fq '"path": "easyroute/routes-v110"' easyroute/files/usr/share/luci/menu.d/luci-app-easyroute.json
 
       - name: EasyRoute invariants
         run: |
@@ -64,6 +67,9 @@ jobs:
               "dnsmasq nftset": 'nftset=/' in engine,
               "engine awg detection": 'amneziawg' in engine,
               "hotplug awg detection": 'amneziawg' in hotplug,
+              "rule id enumerator exists": 'list_rule_ids()' in engine,
+              "fw4 transactional check": 'fw4 check' in engine and 'rollback_generated' in engine,
+              "hotplug never adopts vpn": 'uci set "easyroute.main.interface=' not in hotplug,
           }
           failed = [name for name, ok in checks.items() if not ok]
           for name, ok in checks.items():
