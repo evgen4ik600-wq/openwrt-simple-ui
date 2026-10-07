@@ -95,6 +95,7 @@ status() {
     json_add_string invalid_count "$(cat /tmp/easyroute/invalid_count 2>/dev/null || echo 0)"
     json_add_string last_apply "$(cat /tmp/easyroute/last_apply 2>/dev/null || echo '—')"
     json_add_string overlay_free_kb "$free_kb"
+    json_add_string fallback "$(uci -q get easyroute.main.fallback 2>/dev/null || echo wan)"
     json_dump
 }
 
@@ -262,6 +263,22 @@ delete_rule() {
     if out="$(/usr/libexec/easyroute apply 2>&1)"; then reply 1 'Удалено'; else reply 0 "Удалено, но применение завершилось ошибкой: $out"; fi
 }
 
+
+settings() {
+    json_init
+    json_add_boolean ok 1
+    json_add_string fallback "$(uci -q get easyroute.main.fallback 2>/dev/null || echo wan)"
+    json_add_string default_profile "$(uci -q get easyroute.main.profile 2>/dev/null || true)"
+    json_dump
+}
+save_settings() {
+    json_load "$1"; json_get_var fallback fallback; json_get_var default_profile default_profile
+    case "$fallback" in wan|block) ;; *) reply 0 'Некорректный режим fallback'; return ;; esac
+    uci set easyroute.main.fallback="$fallback"
+    [ -n "$default_profile" ] && uci set easyroute.main.profile="$default_profile"
+    uci commit easyroute
+    if out="$(/usr/libexec/easyroute apply 2>&1)"; then reply 1 'Настройки сохранены и применены'; else reply 0 "$out"; fi
+}
 
 profiles() {
     json_init
@@ -455,6 +472,11 @@ case "${1:-}" in
             json_add_string profile String
         json_close_object
         json_add_object diagnostics; json_close_object
+        json_add_object settings; json_close_object
+        json_add_object save_settings
+            json_add_string fallback String
+            json_add_string default_profile String
+        json_close_object
         json_add_object delete_rule; json_add_string id String; json_close_object
         json_add_object update_rule; json_add_string id String; json_close_object
         json_add_object update_all; json_close_object
@@ -485,6 +507,8 @@ case "${1:-}" in
             delete_device) delete_device "$payload" ;;
             test_route) test_route "$payload" ;;
             diagnostics) diagnostics ;;
+            settings) settings ;;
+            save_settings) save_settings "$payload" ;;
             apply)
                 if out="$(/usr/libexec/easyroute apply 2>&1)"; then reply 1 'Маршруты применены'; else reply 0 "$out"; fi
                 ;;
