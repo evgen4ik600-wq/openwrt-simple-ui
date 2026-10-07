@@ -20,6 +20,8 @@ var callSaveDevice = rpc.declare({ object: 'luci.easyroute', method: 'save_devic
 var callDeleteDevice = rpc.declare({ object: 'luci.easyroute', method: 'delete_device', params: [ 'id' ], expect: { '': {} } });
 var callTest = rpc.declare({ object: 'luci.easyroute', method: 'test_route', params: [ 'host','profile' ], expect: { '': {} } });
 var callDiag = rpc.declare({ object: 'luci.easyroute', method: 'diagnostics', expect: { '': {} } });
+var callSettings = rpc.declare({ object: 'luci.easyroute', method: 'settings', expect: { '': {} } });
+var callSaveSettings = rpc.declare({ object: 'luci.easyroute', method: 'save_settings', params: [ 'fallback','default_profile' ], expect: { '': {} } });
 
 function notify(r) {
     ui.addNotification(null, E('p', {}, r.message || (r.ok ? 'Готово' : 'Ошибка')), r.ok ? 'info' : 'error');
@@ -190,10 +192,33 @@ function diagnosticsBox(){
     });
 }
 
+function settingsBox(profiles, current) {
+    current = current || {};
+    var fallback=E('select',{class:'cbi-input-select'},[
+        E('option',{value:'wan'},'Если VPN недоступен → обычный WAN'),
+        E('option',{value:'block'},'Если VPN недоступен → блокировать')
+    ]);
+    fallback.value=current.fallback || 'wan';
+    var prof=selectProfile(profiles,current.default_profile || '',true);
+    var save=E('button',{class:'btn cbi-button cbi-button-action',type:'button'},'Сохранить');
+    save.addEventListener('click',function(){
+        save.disabled=true;
+        callSaveSettings(fallback.value,prof.value).then(function(r){
+            notify(r);save.disabled=false;
+            if(r.ok)setTimeout(function(){location.reload();},500);
+        });
+    });
+    ui.showModal('Настройки EasyRoute',[E('div',{class:'cbi-section'},[
+        E('label',{style:'display:block'},'Поведение при падении VPN'),fallback,
+        E('label',{style:'display:block;margin-top:14px'},'VPN по умолчанию'),prof,
+        E('p',{style:'color:#777;margin-top:12px'},'Для каждого списка можно выбрать другой VPN-профиль. Режим BLOCK влияет на списки, назначенные недоступному профилю.')
+    ]),E('div',{class:'right'},[E('button',{class:'btn',type:'button',click:ui.hideModal},'Отмена'),' ',save])]);
+}
+
 return view.extend({
-    load:function(){return Promise.all([callStatus(),callList(),callProfiles(),callDevices()]);},
+    load:function(){return Promise.all([callStatus(),callList(),callProfiles(),callDevices(),callSettings()]);},
     render:function(data){
-        var s=data[0]||{},l=data[1]||{},pr=(data[2]||{}).profiles||[],dv=(data[3]||{}).devices||[],rules=l.rules||[];
+        var s=data[0]||{},l=data[1]||{},pr=(data[2]||{}).profiles||[],dv=(data[3]||{}).devices||[],settings=data[4]||{},rules=l.rules||[];
         var urlCount=rules.filter(function(r){return r.source_type==='url';}).length;
         var head=E('div',{class:'cbi-section'},[
             E('h2',{},'EasyRoute'),
@@ -211,7 +236,7 @@ return view.extend({
         var update=E('button',{class:'btn cbi-button',type:'button'},'Обновить URL');update.disabled=!urlCount;update.addEventListener('click',function(){update.disabled=true;callUpdateAll().then(function(r){notify(r);setTimeout(function(){location.reload();},700);});});
         var apply=E('button',{class:'btn cbi-button',type:'button'},'Применить');apply.addEventListener('click',function(){apply.disabled=true;callApply().then(function(r){notify(r);apply.disabled=false;});});
         var test=E('button',{class:'btn cbi-button',type:'button'},'Проверить маршрут');test.addEventListener('click',function(){testBox(pr);});
-        var diag=E('button',{class:'btn cbi-button',type:'button'},'Диагностика');diag.addEventListener('click',diagnosticsBox);
+        var diag=E('button',{class:'btn cbi-button',type:'button'},'Диагностика');diag.addEventListener('click',diagnosticsBox); var settingsBtn=E('button',{class:'btn cbi-button',type:'button'},'Настройки');settingsBtn.addEventListener('click',function(){settingsBox(pr,settings);});
         var routeTable=E('table',{class:'table cbi-section-table'},[
             E('tr',{class:'tr table-titles'},[E('th',{class:'th'},'Название'),E('th',{class:'th'},'Записей'),E('th',{class:'th'},'VPN'),E('th',{class:'th'},'Источник'),E('th',{class:'th'},'')])
         ]);
@@ -235,6 +260,6 @@ return view.extend({
         var devs=E('div',{class:'cbi-section'},[E('h3',{},'Устройства'),E('p',{},'Весь трафик устройства можно направить через выбранный AWG.')]);
         dv.forEach(function(d){var x=E('button',{class:'btn cbi-button cbi-button-remove',type:'button'},'Удалить');x.addEventListener('click',function(){callDeleteDevice(d.id).then(function(r){notify(r);if(r.ok)setTimeout(function(){location.reload();},400);});});devs.appendChild(E('p',{},[d.enabled?'🟢 ':'⚪ ',E('strong',{},d.name||d.mac),' · ',d.mac,' · ',d.profile||'Основной',' ',x]));});
         var addDev=E('button',{class:'btn cbi-button',type:'button'},'+ Добавить устройство');addDev.addEventListener('click',function(){deviceEditor(null,pr);});devs.appendChild(addDev);
-        return E('div',{},[head,status,E('div',{style:'margin:12px 0'},[add,' ',catalog,' ',update,' ',apply,' ',test,' ',diag]),routeTable,vp,devs]);
+        return E('div',{},[head,status,E('div',{style:'margin:12px 0'},[add,' ',catalog,' ',update,' ',apply,' ',test,' ',diag,' ',settingsBtn]),routeTable,vp,devs]);
     }
 });
