@@ -107,6 +107,7 @@ return view.extend({
   var vpn=E('div',{class:'cbi-section'},[E('h3',{},'🛡️ VPN')]);
   ps.forEach(function(p){vpn.appendChild(E('p',{},[(p.up?'🟢 ':'🔴 '),E('strong',{},p.name),' · '+p.interface,E('span',{style:'opacity:.6'},' · '+(p.up?'работает':'не подключён'))]));});
   vpn.appendChild(E('p',{},'💡 EasyRoute использует обычные системные интерфейсы AmneziaWG и не прячет VPN внутри себя.'));
+  vpn.appendChild(E('button',{class:'btn cbi-button',type:'button',click:function(){window.location.href=L.url('admin/network/network');}},'➕ Добавить / импортировать AWG'));
   var devices=E('div',{class:'cbi-section'},[E('h3',{},'📱 Устройства'),E('p',{},'Можно отправить целиком телефон, ТВ или компьютер через VPN.')]);
   devs.forEach(function(d){var del=E('button',{class:'btn cbi-button cbi-button-remove',type:'button'},'🗑️');del.addEventListener('click',function(){callDeleteDevice(d.id).then(function(x){notify(x);if(x.ok)setTimeout(refresh,350);});});devices.appendChild(E('p',{},['📱 ',E('strong',{},d.name||d.mac),' · '+d.mac+' ',del]));});
   devices.appendChild(E('button',{class:'btn cbi-button cbi-button-action',type:'button',click:function(){devicePicker(ps);}},'🔎 Найти устройства автоматически'));
