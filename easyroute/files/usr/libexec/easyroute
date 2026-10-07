@@ -63,34 +63,85 @@ iface_up() {
     return 1
 }
 
+vpn_ids() { uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=vpn$/\1/p"; }
+device_ids() { uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=device$/\1/p"; }
+
+profile_ids() {
+    ids="$(vpn_ids)"
+    if [ -n "$ids" ]; then printf '%s\n' "$ids"; else printf '%s\n' '__default'; fi
+}
+profile_num() {
+    wanted="$1"; n=0
+    for id in $(vpn_ids); do
+        [ "$id" = "$wanted" ] && { printf '%s\n' "$n"; return; }
+        n=$((n+1))
+    done
+    printf '%s\n' 0
+}
+profile_field() {
+    id="$1"; field="$2"
+    if [ "$id" = '__default' ]; then
+        case "$field" in
+            name) printf 'Основной AWG\n' ;;
+            interface) get_iface ;;
+            mark) printf '0x66\n' ;;
+            table) printf '166\n' ;;
+            enabled) printf '1\n' ;;
+        esac
+    else
+        uci -q get "easyroute.$id.$field" 2>/dev/null || {
+            case "$field" in mark) printf '0x66\n';; table) printf '166\n';; enabled) printf '1\n';; esac
+        }
+    fi
+}
+profile_for_rule() {
+    id="$1"; p="$(uci -q get "easyroute.$id.profile" 2>/dev/null || true)"
+    if [ -n "$p" ] && [ "$(uci -q get "easyroute.$p" 2>/dev/null || true)" = 'vpn' ]; then
+        printf '%s\n' "$p"; return
+    fi
+    p="$(uci -q get easyroute.main.profile 2>/dev/null || true)"
+    if [ -n "$p" ] && [ "$(uci -q get "easyroute.$p" 2>/dev/null || true)" = 'vpn' ]; then
+        printf '%s\n' "$p"; return
+    fi
+    p="$(vpn_ids | head -n1)"
+    [ -n "$p" ] && printf '%s\n' "$p" || printf '__default\n'
+}
 route_down() {
     while ip rule del priority "$RULE_PRIO" 2>/dev/null; do :; done
     while ip -6 rule del priority "$RULE_PRIO" 2>/dev/null; do :; done
     ip route flush table "$TABLE" 2>/dev/null || true
     ip -6 route flush table "$TABLE" 2>/dev/null || true
+    for id in $(vpn_ids); do
+        n="$(profile_num "$id")"
+        m="$(profile_field "$id" mark)"
+        t="$(profile_field "$id" table)"
+        while ip rule del priority "$((RULE_PRIO+n))" fwmark "$m/0xff" 2>/dev/null; do :; done
+        while ip -6 rule del priority "$((RULE_PRIO+n))" fwmark "$m/0xff" 2>/dev/null; do :; done
+        ip route flush table "$t" 2>/dev/null || true
+        ip -6 route flush table "$t" 2>/dev/null || true
+    done
 }
-
 route_up() {
-    local iface dev
-    iface="$(get_iface)"
-    iface_up "$iface" || { route_down; return 0; }
-    dev="$(get_dev "$iface")"
-
+    local id iface dev m t n enabled
     route_down
-    ip route replace default dev "$dev" table "$TABLE" 2>/dev/null || return 1
-    ip rule add priority "$RULE_PRIO" fwmark "$MARK/0xff" lookup "$TABLE" 2>/dev/null || return 1
-
-    if ip -6 addr show dev "$dev" 2>/dev/null | grep -q 'inet6 '; then
-        ip -6 route replace default dev "$dev" table "$TABLE" 2>/dev/null || true
-        ip -6 rule add priority "$RULE_PRIO" fwmark "$MARK/0xff" lookup "$TABLE" 2>/dev/null || true
-    fi
-    return 0
+    n=0
+    for id in $(profile_ids); do
+        iface="$(profile_field "$id" interface)"
+        m="$(profile_field "$id" mark)"
+        t="$(profile_field "$id" table)"
+        enabled="$(profile_field "$id" enabled)"
+        [ "$enabled" = '1' ] || { n=$((n+1)); continue; }
+        iface_up "$iface" || { n=$((n+1)); continue; }
+        dev="$(get_dev "$iface")"
+        ip route replace default dev "$dev" table "$t" 2>/dev/null || { n=$((n+1)); continue; }
+        ip rule add priority "$((RULE_PRIO+n))" fwmark "$m/0xff" lookup "$t" 2>/dev/null || true
+        if ip -6 addr show dev "$dev" 2>/dev/null | grep -q 'inet6 '; then
+            ip -6 route replace default dev "$dev" table "$t" 2>/dev/null || true
+            ip -6 rule add priority "$((RULE_PRIO+n))" fwmark "$m/0xff" lookup "$t" 2>/dev/null || true
+        fi
+        n=$((n+1))
+    done
 }
-
-list_rule_ids() {
-    uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=rule$/\1/p"
-}
-
 parse_all() {
     local out="$1" id enabled file
     : > "$out"
