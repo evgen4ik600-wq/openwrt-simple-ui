@@ -64,6 +64,7 @@ iface_up() {
 }
 
 vpn_ids() { uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=vpn$/\1/p"; }
+list_rule_ids() { uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=rule$/\1/p"; }
 device_ids() { uci show easyroute 2>/dev/null | sed -n "s/^easyroute\.\([^.=]*\)=device$/\1/p"; }
 
 profile_ids() {
