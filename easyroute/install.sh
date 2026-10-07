@@ -51,7 +51,7 @@ if ! command -v awg >/dev/null 2>&1 || ! pkg_has kmod-amneziawg || ! pkg_has luc
 fi
 [ "${FREE_KB:-0}" -ge "$MIN_KB" ] || fail "Слишком мало свободной flash: ${FREE_KB:-0} КБ. Для безопасной установки нужно минимум ${MIN_KB} КБ."
 
-say "EasyRoute v1.0.0 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
+say "EasyRoute v1.0.1 bootstrap: OpenWrt $VER, свободно $((FREE_KB/1024)) МБ"
 
 # Устанавливаем поддержку AmneziaWG 3.1, но НЕ создаём VPN-подключение.
 if ! command -v awg >/dev/null 2>&1 || ! pkg_has kmod-amneziawg || ! pkg_has luci-proto-amneziawg; then
@@ -95,7 +95,7 @@ fi
 [ -n "$IFACE" ] || IFACE="${EXISTING:-AWG}"
 
 rm -rf "$TMP"; mkdir -p "$TMP"
-FILES='files/usr/libexec/easyroute files/usr/libexec/easyroute-url-update files/usr/libexec/rpcd/luci.easyroute files/etc/init.d/easyroute files/etc/hotplug.d/iface/95-easyroute files/usr/share/luci/menu.d/luci-app-easyroute.json files/usr/share/rpcd/acl.d/luci-app-easyroute.json files/www/luci-static/resources/view/easyroute/routes.js'
+FILES='files/usr/libexec/easyroute files/usr/libexec/easyroute-url-update files/usr/libexec/rpcd/luci.easyroute files/etc/init.d/easyroute files/etc/hotplug.d/iface/95-easyroute files/usr/share/luci/menu.d/luci-app-easyroute.json files/usr/share/rpcd/acl.d/luci-app-easyroute.json files/www/luci-static/resources/view/easyroute/routes.js files/www/luci-static/resources/view/easyroute/routes-v101.js'
 for f in $FILES; do
     mkdir -p "$TMP/$(dirname "$f")"
     wget -qO "$TMP/$f" "$REPO_BASE/$f" || fail "Не удалось скачать $f"
@@ -162,8 +162,7 @@ rm -f /tmp/easyroute-cron.$
 /etc/init.d/cron restart >/dev/null 2>&1 || true
 
 /etc/init.d/rpcd restart >/dev/null 2>&1 || true
-rm -f /tmp/luci-indexcache 2>/dev/null || true
-rm -f /tmp/luci-modulecache/* 2>/dev/null || true
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache /tmp/luci-*cache* 2>/dev/null || true
 
 if ! out="$(/usr/libexec/easyroute apply 2>&1)"; then
     printf '%s\n' "$out" >&2
