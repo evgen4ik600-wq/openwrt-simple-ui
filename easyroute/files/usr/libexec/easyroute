@@ -371,7 +371,18 @@ install_generated() {
     cp "$tmp/nat.nft" "$NAT_FILE"
     cp "$tmp/dnsmasq.conf" "$DNSMASQ_CONF"
 
-    if ! fw4 -q check >/dev/null 2>&1; then
+    fw4_err="$tmp/fw4-check.err"
+    if ! fw4 check >"$fw4_err" 2>&1; then
+        echo '=== fw4 check ===' >&2
+        cat "$fw4_err" >&2
+        echo '=== generated sets ===' >&2
+        cat "$tmp/sets.nft" >&2
+        echo '=== generated mark ===' >&2
+        cat "$tmp/mark.nft" >&2
+        echo '=== generated forward ===' >&2
+        cat "$tmp/forward.nft" >&2
+        echo '=== generated nat ===' >&2
+        cat "$tmp/nat.nft" >&2
         rollback_generated "$rollback"
         echo 'Ошибка проверки nftables. Изменения отменены.' >&2
         return 1
