@@ -417,6 +417,57 @@ test_route() {
     json_init; json_add_boolean ok 1; json_add_string host "$host"; json_add_string ip "$ip"; json_add_string profile "$name"; json_add_string interface "$iface"; json_add_string mark "$mark"; json_add_string route "$route"; json_dump
 }
 
+
+toggle_rule() {
+    json_load "$1"; json_get_var id id; json_get_var enabled enabled
+    valid_id "$id" || { reply 0 'Некорректный ID'; return; }
+    [ "$(uci -q get "easyroute.$id" 2>/dev/null || true)" = 'rule' ] || { reply 0 'Маршрут не найден'; return; }
+    case "$enabled" in 0|false) enabled=0 ;; *) enabled=1 ;; esac
+    old="$(uci -q get "easyroute.$id.enabled" 2>/dev/null || echo 1)"
+    uci set "easyroute.$id.enabled=$enabled"; uci commit easyroute
+    if out="$(/usr/libexec/easyroute apply 2>&1)"; then
+        reply 1 "$([ "$enabled" = 1 ] && echo 'Маршрут включён' || echo 'Маршрут выключен')"
+    else
+        uci set "easyroute.$id.enabled=$old"; uci commit easyroute
+        /usr/libexec/easyroute apply >/dev/null 2>&1 || true
+        reply 0 "Не удалось применить изменение. Предыдущее состояние восстановлено: $out"
+    fi
+}
+
+discover_devices() {
+    json_init; json_add_boolean ok 1; json_add_array devices
+    {
+        awk 'NF>=4 && $2 ~ /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/ {print $2 "|" $3 "|" $4}' /tmp/dhcp.leases 2>/dev/null
+        ip neigh show 2>/dev/null | awk '/lladdr/ {ip=$1; for(i=1;i<=NF;i++) if($i=="lladdr" && (i+1)<=NF) print $(i+1) "|" ip "|"}'
+    } | awk -F'|' 'BEGIN{IGNORECASE=1} {m=toupper($1); if(m!=""&&!seen[m]++){print m "|" $2 "|" $3}}' |
+    while IFS='|' read -r mac ipaddr hostname; do
+        [ -n "$mac" ] || continue
+        [ -n "$hostname" ] && [ "$hostname" != "*" ] || hostname="$ipaddr"
+        json_add_object ''
+        json_add_string mac "$mac"
+        json_add_string ip "$ipaddr"
+        json_add_string name "$hostname"
+        json_close_object
+    done
+    json_close_array; json_dump
+}
+
+selftest() {
+    iface="$(detect_iface)"
+    internet=0; vpn=0; firewall=0; dns=0; routing=0; updater=0
+    nslookup openwrt.org 127.0.0.1 >/dev/null 2>&1 && internet=1
+    command -v awg >/dev/null 2>&1 && awg show "$iface" >/dev/null 2>&1 && vpn=1
+    fw4 -q check >/dev/null 2>&1 && firewall=1
+    dnsmasq --test --conf-file=/etc/dnsmasq.conf >/dev/null 2>&1 && dns=1
+    ip rule show 2>/dev/null | grep -q 'fwmark' && routing=1
+    [ -x /usr/libexec/easyroute-url-update ] && updater=1
+    json_init; json_add_boolean ok 1
+    json_add_boolean internet "$internet"; json_add_boolean vpn "$vpn"
+    json_add_boolean firewall "$firewall"; json_add_boolean dns "$dns"
+    json_add_boolean routing "$routing"; json_add_boolean updater "$updater"
+    json_dump
+}
+
 diagnostics() {
     json_init; json_add_boolean ok 1
     json_add_string openwrt "$(grep -o "DISTRIB_RELEASE='[^']*'" /etc/openwrt_release 2>/dev/null | cut -d"'" -f2)"
@@ -471,6 +522,9 @@ case "${1:-}" in
             json_add_string host String
             json_add_string profile String
         json_close_object
+        json_add_object toggle_rule; json_add_string id String; json_add_boolean enabled Boolean; json_close_object
+        json_add_object discover_devices; json_close_object
+        json_add_object selftest; json_close_object
         json_add_object diagnostics; json_close_object
         json_add_object settings; json_close_object
         json_add_object save_settings
@@ -506,6 +560,9 @@ case "${1:-}" in
             save_device) save_device "$payload" ;;
             delete_device) delete_device "$payload" ;;
             test_route) test_route "$payload" ;;
+            toggle_rule) toggle_rule "$payload" ;;
+            discover_devices) discover_devices ;;
+            selftest) selftest ;;
             diagnostics) diagnostics ;;
             settings) settings ;;
             save_settings) save_settings "$payload" ;;
